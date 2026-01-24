@@ -1,5 +1,5 @@
 # awallet_bot.py
-# Fixed: FSM context & data consistency in /send → TXID → proof flow using StorageKey
+# Updated: added auto-QR feature (/autoqr, /offauto)
 
 import asyncio
 import json
@@ -20,13 +20,17 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 # ────────────────────────────────────────────────
 
 OWNER_ID = 8032922682
-BOT_TOKEN = "8471574197:AAHpzznbJ_4bCgzeJD4AjFTr8iJF8X0JC7A"           # ← CHANGE THIS
+BOT_TOKEN = "8471574197:AAHpzznbJ_4bCgzeJD4AjFTr8iJF8X0JC7A"
 SUPPORT_USERNAME = "@theawalletsupportbot"
 
 DB_FILE = Path("awallet_users.json")
 
-# Global welcome media info
+# Global welcome media
 welcome_media: Optional[dict] = None        # {"file_id": str, "type": "voice"|"audio"}
+
+# Auto-QR settings
+auto_qr_enabled: bool = False
+auto_qr_file_id: Optional[str] = None
 
 # ────────────────────────────────────────────────
 # DATA
@@ -52,7 +56,7 @@ class BuyOrder(StatesGroup):
 
 
 # ────────────────────────────────────────────────
-# PERSISTENCE
+# PERSISTENCE – now also saves auto_qr settings
 # ────────────────────────────────────────────────
 
 def save_db():
@@ -61,14 +65,16 @@ def save_db():
             json.dump({
                 "users": users,
                 "admins": list(admins),
-                "welcome_media": welcome_media
+                "welcome_media": welcome_media,
+                "auto_qr_enabled": auto_qr_enabled,
+                "auto_qr_file_id": auto_qr_file_id
             }, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logging.error(f"save_db failed: {e}")
 
 
 def load_db():
-    global users, admins, welcome_media
+    global users, admins, welcome_media, auto_qr_enabled, auto_qr_file_id
     if not DB_FILE.is_file():
         return
     try:
@@ -77,6 +83,8 @@ def load_db():
             users = data.get("users", {})
             admins = set(data.get("admins", [OWNER_ID]))
             welcome_media = data.get("welcome_media")
+            auto_qr_enabled = data.get("auto_qr_enabled", False)
+            auto_qr_file_id = data.get("auto_qr_file_id")
     except Exception as e:
         logging.error(f"load_db failed: {e}")
 
@@ -105,7 +113,45 @@ def get_main_menu() -> InlineKeyboardMarkup:
 
 
 # ────────────────────────────────────────────────
-# Set welcome voice/audio
+# NEW: Auto-QR commands (owner only)
+# ────────────────────────────────────────────────
+
+@router.message(Command("autoqr"))
+async def cmd_autoqr(message: types.Message):
+    if message.from_user.id != OWNER_ID:
+        return
+
+    if not message.reply_to_message or not message.reply_to_message.photo:
+        await message.reply("Reply to a **QR photo** with /autoqr to enable auto-QR mode.")
+        return
+
+    global auto_qr_enabled, auto_qr_file_id
+    auto_qr_file_id = message.reply_to_message.photo[-1].file_id
+    auto_qr_enabled = True
+    save_db()
+
+    await message.reply(
+        "✅ Auto-QR mode **ENABLED**!\n"
+        "From now on, every new order will automatically receive this QR code.\n"
+        f"QR File ID: {auto_qr_file_id}\n"
+        "Use /offauto to disable."
+    )
+
+
+@router.message(Command("offauto"))
+async def cmd_offauto(message: types.Message):
+    if message.from_user.id != OWNER_ID:
+        return
+
+    global auto_qr_enabled
+    auto_qr_enabled = False
+    save_db()
+
+    await message.reply("✅ Auto-QR mode **DISABLED**.\nOrders will now wait for admin to send QR via /send.")
+
+
+# ────────────────────────────────────────────────
+# Set welcome voice/audio (unchanged)
 # ────────────────────────────────────────────────
 
 @router.message(Command("setvn"))
@@ -144,7 +190,7 @@ async def cmd_setvn(message: types.Message):
 
 
 # ────────────────────────────────────────────────
-# START + REGISTRATION
+# REGISTRATION (unchanged)
 # ────────────────────────────────────────────────
 
 @router.message(CommandStart(deep_link=False))
@@ -237,26 +283,20 @@ async def reg_upi_confirm(message: types.Message, state: FSMContext):
             mtype = welcome_media["type"]
 
             if mtype == "voice":
-                await message.answer_voice(
-                    voice=file_id,
-                    caption="🎙️ Welcome to Awallet – quick voice introduction"
-                )
+                await message.answer_voice(voice=file_id, caption="🎙️ Welcome to Awallet")
             elif mtype == "audio":
-                await message.answer_audio(
-                    audio=file_id,
-                    caption="🎵 Welcome to Awallet – quick audio introduction"
-                )
+                await message.answer_audio(audio=file_id, caption="🎵 Welcome to Awallet")
 
             users[uid_str]["welcome_voice_sent"] = True
             save_db()
         except Exception as e:
-            logging.error(f"Failed to send welcome media to {uid_str}: {e}")
+            logging.error(f"Failed to send welcome media: {e}")
 
     await state.clear()
 
 
 # ────────────────────────────────────────────────
-# BUY ORDER FLOW – FIXED FSM consistency
+# BUY ORDER FLOW – with auto-QR logic
 # ────────────────────────────────────────────────
 
 @router.message(BuyOrder.waiting_for_amount)
@@ -280,14 +320,40 @@ async def buy_amount(message: types.Message, state: FSMContext):
     users[uid_str]["orders"].append(order)
     save_db()
 
-    notify = f"📢 New Order Created\n\nUser ID: {message.from_user.id}\nAmount: ₹{amt:.2f}"
-    for aid in admins:
-        try:
-            await bot.send_message(aid, notify)
-        except:
-            pass
+    global auto_qr_enabled, auto_qr_file_id
 
-    await message.answer("⏳ Please wait while we are creating your order...")
+    if auto_qr_enabled and auto_qr_file_id:
+        # Auto-send QR
+        try:
+            await bot.send_photo(
+                message.from_user.id,
+                photo=auto_qr_file_id,
+                caption=(
+                    f"Order created for ₹{amt:.2f}\n\n"
+                    "Please complete the payment using the QR code below.\n"
+                    "After payment, reply here with your **Transaction ID**."
+                )
+            )
+            # Move user to txid state
+            key = StorageKey(bot_id=bot.id, chat_id=message.from_user.id, user_id=message.from_user.id)
+            await dp.storage.set_state(key, BuyOrder.waiting_for_txid)
+            await dp.storage.update_data(key, {"current_order_index": len(users[uid_str]["orders"]) - 1})
+
+            await message.answer("⏳ Your order is ready! QR code sent above. Proceed with payment.")
+        except Exception as e:
+            logging.error(f"Auto-QR send failed: {e}")
+            await message.answer("Order created, but failed to send auto-QR. Please wait for admin.")
+    else:
+        # Normal flow: notify admins
+        notify = f"📢 New Order Created\n\nUser ID: {message.from_user.id}\nAmount: ₹{amt:.2f}"
+        for aid in admins:
+            try:
+                await bot.send_message(aid, notify)
+            except:
+                pass
+
+        await message.answer("⏳ Please wait while we are creating your order... (admin will send QR soon)")
+
     await state.clear()
 
 
@@ -300,7 +366,7 @@ async def admin_send_qr(message: types.Message):
     parts = command_text.strip().split(maxsplit=1)
 
     if len(parts) < 2:
-        await message.reply("Usage: /send <userid>   (attach QR photo and send in one message)")
+        await message.reply("Usage: /send <userid>   (attach QR photo)")
         return
 
     try:
@@ -334,13 +400,7 @@ async def admin_send_qr(message: types.Message):
             )
         )
 
-        # ─── FIXED: correctly set state & data for the TARGET user ───
-        target_key = StorageKey(
-            bot_id=bot.id,
-            chat_id=target_uid,
-            user_id=target_uid
-        )
-
+        target_key = StorageKey(bot_id=bot.id, chat_id=target_uid, user_id=target_uid)
         await dp.storage.set_state(target_key, BuyOrder.waiting_for_txid)
         await dp.storage.update_data(target_key, {"current_order_index": order_idx})
 
@@ -404,7 +464,7 @@ async def buy_proof(message: types.Message, state: FSMContext):
 
 
 # ────────────────────────────────────────────────
-# OTHER HANDLERS (unchanged)
+# OTHER COMMANDS & HANDLERS (unchanged)
 # ────────────────────────────────────────────────
 
 @router.callback_query(F.data == "help")
