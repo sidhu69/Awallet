@@ -1,5 +1,5 @@
 # awallet_bot.py
-# Fixed: welcome voice note sent exactly once using persistent user flag
+# Fixed: FSM context & data consistency in /send → TXID → proof flow using StorageKey
 
 import asyncio
 import json
@@ -25,14 +25,14 @@ SUPPORT_USERNAME = "@theawalletsupportbot"
 
 DB_FILE = Path("awallet_users.json")
 
-# Global welcome voice note (file_id) - set by owner with /setvn
-welcome_voice_file_id: Optional[str] = None
+# Global welcome media info
+welcome_media: Optional[dict] = None        # {"file_id": str, "type": "voice"|"audio"}
 
 # ────────────────────────────────────────────────
 # DATA
 # ────────────────────────────────────────────────
 
-users: Dict[str, Dict[str, Any]] = {}       # str(user_id) → data
+users: Dict[str, Dict[str, Any]] = {}
 admins: set[int] = {OWNER_ID}
 
 # ────────────────────────────────────────────────
@@ -61,14 +61,14 @@ def save_db():
             json.dump({
                 "users": users,
                 "admins": list(admins),
-                "welcome_voice_file_id": welcome_voice_file_id
+                "welcome_media": welcome_media
             }, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logging.error(f"save_db failed: {e}")
 
 
 def load_db():
-    global users, admins, welcome_voice_file_id
+    global users, admins, welcome_media
     if not DB_FILE.is_file():
         return
     try:
@@ -76,7 +76,7 @@ def load_db():
             data = json.load(f)
             users = data.get("users", {})
             admins = set(data.get("admins", [OWNER_ID]))
-            welcome_voice_file_id = data.get("welcome_voice_file_id")
+            welcome_media = data.get("welcome_media")
     except Exception as e:
         logging.error(f"load_db failed: {e}")
 
@@ -105,7 +105,7 @@ def get_main_menu() -> InlineKeyboardMarkup:
 
 
 # ────────────────────────────────────────────────
-# Set welcome voice note (owner only)
+# Set welcome voice/audio
 # ────────────────────────────────────────────────
 
 @router.message(Command("setvn"))
@@ -114,15 +114,33 @@ async def cmd_setvn(message: types.Message):
         await message.reply("Only the bot owner can use this command.")
         return
 
-    if not message.reply_to_message or not message.reply_to_message.voice:
-        await message.reply("Reply to a voice message with /setvn to set the welcome voice.")
+    replied = message.reply_to_message
+    if not replied:
+        await message.reply("Reply to a voice message or audio file with /setvn")
         return
 
-    global welcome_voice_file_id
-    welcome_voice_file_id = message.reply_to_message.voice.file_id
+    file_id = None
+    media_type = None
+
+    if replied.voice:
+        file_id = replied.voice.file_id
+        media_type = "voice"
+    elif replied.audio:
+        file_id = replied.audio.file_id
+        media_type = "audio"
+
+    if not file_id or not media_type:
+        await message.reply("Please reply to a **voice message** or **audio file** (mp3, m4a, ogg, etc.)")
+        return
+
+    global welcome_media
+    welcome_media = {"file_id": file_id, "type": media_type}
     save_db()
 
-    await message.reply(f"✅ Welcome voice note set (file_id: {welcome_voice_file_id})")
+    await message.reply(
+        f"✅ Welcome media set!\n"
+        f"Type: {media_type}\nFile ID: {file_id}"
+    )
 
 
 # ────────────────────────────────────────────────
@@ -167,7 +185,7 @@ async def reg_name(message: types.Message, state: FSMContext):
         "upi": None,
         "balance": 0.0,
         "orders": [],
-        "welcome_voice_sent": False          # ← new persistent flag
+        "welcome_voice_sent": False
     }
     save_db()
 
@@ -206,96 +224,39 @@ async def reg_upi_confirm(message: types.Message, state: FSMContext):
     uid_str = str(message.from_user.id)
     users[uid_str]["upi"] = expected
 
-    # Send success text
     await message.answer(
         "✅ UPI ID successfully saved.\n\n"
         "You can now use all Awallet features.",
         reply_markup=get_main_menu()
     )
 
-    # Send voice note exactly once — using persistent user flag
-    global welcome_voice_file_id
-    if welcome_voice_file_id and not users[uid_str].get("welcome_voice_sent", False):
+    global welcome_media
+    if welcome_media and not users[uid_str].get("welcome_voice_sent", False):
         try:
-            await message.answer_voice(
-                voice=welcome_voice_file_id,
-                caption="🎙️ Welcome to Awallet – quick voice introduction"
-            )
+            file_id = welcome_media["file_id"]
+            mtype = welcome_media["type"]
+
+            if mtype == "voice":
+                await message.answer_voice(
+                    voice=file_id,
+                    caption="🎙️ Welcome to Awallet – quick voice introduction"
+                )
+            elif mtype == "audio":
+                await message.answer_audio(
+                    audio=file_id,
+                    caption="🎵 Welcome to Awallet – quick audio introduction"
+                )
+
             users[uid_str]["welcome_voice_sent"] = True
-            save_db()                           # ← persist the flag
+            save_db()
         except Exception as e:
-            logging.error(f"Failed to send welcome voice to {uid_str}: {e}")
+            logging.error(f"Failed to send welcome media to {uid_str}: {e}")
 
     await state.clear()
 
 
 # ────────────────────────────────────────────────
-# MENU CALLBACKS
-# ────────────────────────────────────────────────
-
-@router.callback_query(F.data == "help")
-async def cb_help(c: types.CallbackQuery):
-    await c.message.edit_text(
-        "ℹ️ About Awallet\n\n"
-        "AI-powered system that analyzes market data in real time.\n"
-        "• AI-based analysis\n"
-        "• Live market integration\n"
-        "• Estimated attractive daily returns\n\n"
-        "Earnings are sent to your registered UPI.",
-        reply_markup=get_main_menu()
-    )
-    await c.answer()
-
-
-@router.callback_query(F.data == "wallet")
-async def cb_wallet(c: types.CallbackQuery):
-    uid_str = str(c.from_user.id)
-    if uid_str not in users:
-        await c.message.edit_text("Please register first → /start")
-        return
-
-    d = users[uid_str]
-    text = (
-        f"👛 Your Wallet\n\n"
-        f"User ID: {c.from_user.id}\n"
-        f"Current Balance: ₹{d['balance']:.2f}\n"
-        f"UPI ID: {d.get('upi', 'Not set')}\n\n"
-        "Manage UPI:\n"
-        "/deleteupi\n"
-        "/newupi yourupi@bank"
-    )
-    await c.message.edit_text(text, reply_markup=get_main_menu())
-    await c.answer()
-
-
-@router.callback_query(F.data == "support")
-async def cb_support(c: types.CallbackQuery):
-    await c.message.edit_text(
-        f"🎧 Support\n\n"
-        f"If you have any questions or need assistance, please message:\n"
-        f"{SUPPORT_USERNAME}",
-        reply_markup=get_main_menu()
-    )
-    await c.answer()
-
-
-@router.callback_query(F.data == "buy")
-async def cb_buy(c: types.CallbackQuery, state: FSMContext):
-    uid_str = str(c.from_user.id)
-    if uid_str not in users or not users[uid_str].get("upi"):
-        await c.message.edit_text("Please complete registration and set UPI first.")
-        return
-
-    await c.message.edit_text(
-        "🛒 Buy Order\n\n"
-        "Please enter a valid amount between ₹50 and ₹10,000 to purchase an order."
-    )
-    await state.set_state(BuyOrder.waiting_for_amount)
-    await c.answer()
-
-
-# ────────────────────────────────────────────────
-# BUY ORDER FLOW
+# BUY ORDER FLOW – FIXED FSM consistency
 # ────────────────────────────────────────────────
 
 @router.message(BuyOrder.waiting_for_amount)
@@ -373,9 +334,15 @@ async def admin_send_qr(message: types.Message):
             )
         )
 
-        key = StorageKey(bot_id=bot.id, chat_id=target_uid, user_id=target_uid)
-        await dp.storage.set_state(key, BuyOrder.waiting_for_txid)
-        await dp.storage.update_data(key, {"current_order_index": order_idx})
+        # ─── FIXED: correctly set state & data for the TARGET user ───
+        target_key = StorageKey(
+            bot_id=bot.id,
+            chat_id=target_uid,
+            user_id=target_uid
+        )
+
+        await dp.storage.set_state(target_key, BuyOrder.waiting_for_txid)
+        await dp.storage.update_data(target_key, {"current_order_index": order_idx})
 
         await message.reply(f"Payment QR sent to user {target_uid}")
         save_db()
@@ -392,7 +359,9 @@ async def buy_txid(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     idx = data.get("current_order_index")
+
     if idx is None:
+        await message.answer("Order session expired. Please create a new order.")
         await state.clear()
         return
 
@@ -409,7 +378,9 @@ async def buy_txid(message: types.Message, state: FSMContext):
 async def buy_proof(message: types.Message, state: FSMContext):
     data = await state.get_data()
     idx = data.get("current_order_index")
+
     if idx is None:
+        await message.answer("Order session expired. Please create a new order.")
         await state.clear()
         return
 
@@ -433,8 +404,69 @@ async def buy_proof(message: types.Message, state: FSMContext):
 
 
 # ────────────────────────────────────────────────
-# /confirm command
+# OTHER HANDLERS (unchanged)
 # ────────────────────────────────────────────────
+
+@router.callback_query(F.data == "help")
+async def cb_help(c: types.CallbackQuery):
+    await c.message.edit_text(
+        "ℹ️ About Awallet\n\n"
+        "AI-powered system that analyzes market data in real time.\n"
+        "• AI-based analysis\n"
+        "• Live market integration\n"
+        "• Estimated attractive daily returns\n\n"
+        "Earnings are sent to your registered UPI.",
+        reply_markup=get_main_menu()
+    )
+    await c.answer()
+
+
+@router.callback_query(F.data == "wallet")
+async def cb_wallet(c: types.CallbackQuery):
+    uid_str = str(c.from_user.id)
+    if uid_str not in users:
+        await c.message.edit_text("Please register first → /start")
+        return
+
+    d = users[uid_str]
+    text = (
+        f"👛 Your Wallet\n\n"
+        f"User ID: {c.from_user.id}\n"
+        f"Current Balance: ₹{d['balance']:.2f}\n"
+        f"UPI ID: {d.get('upi', 'Not set')}\n\n"
+        "Manage UPI:\n"
+        "/deleteupi\n"
+        "/newupi yourupi@bank"
+    )
+    await c.message.edit_text(text, reply_markup=get_main_menu())
+    await c.answer()
+
+
+@router.callback_query(F.data == "support")
+async def cb_support(c: types.CallbackQuery):
+    await c.message.edit_text(
+        f"🎧 Support\n\n"
+        f"If you have any questions or need assistance, please message:\n"
+        f"{SUPPORT_USERNAME}",
+        reply_markup=get_main_menu()
+    )
+    await c.answer()
+
+
+@router.callback_query(F.data == "buy")
+async def cb_buy(c: types.CallbackQuery, state: FSMContext):
+    uid_str = str(c.from_user.id)
+    if uid_str not in users or not users[uid_str].get("upi"):
+        await c.message.edit_text("Please complete registration and set UPI first.")
+        return
+
+    await c.message.edit_text(
+        "🛒 Buy Order\n\n"
+        "Please enter a valid amount between ₹50 and ₹10,000 to purchase an order."
+    )
+    await state.set_state(BuyOrder.waiting_for_amount)
+    await c.answer()
+
 
 @router.message(Command("confirm"))
 async def cmd_confirm(message: types.Message):
@@ -490,10 +522,6 @@ async def cmd_confirm(message: types.Message):
 
     save_db()
 
-
-# ────────────────────────────────────────────────
-# OTHER COMMANDS
-# ────────────────────────────────────────────────
 
 @router.message(Command("editbalance"))
 async def cmd_editbalance(message: types.Message):
