@@ -1,13 +1,14 @@
-# handlers/buy_order.py - Fixed TXID + proof flow for auto & manual
+# handlers/buy_order.py
 from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 
 from config import auto_qr_enabled, auto_qr_file_id, users, admins
-from .states import BuyOrder, Registration  # ← add this line
 from database import save_db
-from .registration import get_main_menu  # shared menu
+from states import BuyOrder  # ← this line is critical
 
 router = Router()
+
+# ... rest of the file remains the same ...
 
 @router.message(BuyOrder.waiting_for_amount)
 async def buy_amount(message: types.Message, state: FSMContext):
