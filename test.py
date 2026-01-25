@@ -1,5 +1,5 @@
 # awallet_bot.py
-# Fixed: full admin notifications (TXID + proof with full UPI + photo), clear screenshot prompt
+# Fixed: TXID + proof notifications to admin (full UPI + photo), clear user prompts, confirm message
 
 import asyncio
 import json
@@ -296,7 +296,7 @@ async def reg_upi_confirm(message: types.Message, state: FSMContext):
 
 
 # ────────────────────────────────────────────────
-# BUY ORDER FLOW – fixed admin notifications + screenshot prompt
+# BUY ORDER FLOW – fixed notifications + user prompts
 # ────────────────────────────────────────────────
 
 @router.message(BuyOrder.waiting_for_amount)
@@ -341,7 +341,6 @@ async def buy_amount(message: types.Message, state: FSMContext):
 
             await message.answer("⏳ Your order is ready! QR code sent above. Proceed with payment.")
 
-            # Notify admins/owner (AUTO-QR)
             notify_msg = (
                 f"🔔 New order (AUTO-QR sent)\n"
                 f"User ID: {uid_str}\n"
@@ -359,7 +358,6 @@ async def buy_amount(message: types.Message, state: FSMContext):
             logging.error(f"Auto-QR send failed: {e}")
             await message.answer("Order created, but failed to send auto-QR. Please wait for admin.")
     else:
-        # Normal flow
         notify = f"📢 New Order Created\n\nUser ID: {uid_str}\nAmount: ₹{amt:.2f}\nUPI: {user_upi}"
         for aid in admins:
             try:
@@ -398,10 +396,9 @@ async def buy_txid(message: types.Message, state: FSMContext):
     )
     await state.set_state(BuyOrder.waiting_for_proof)
 
-    # Always notify admins/owner with full UPI
+    # Notify admins/owner
     amt = users[uid_str]["orders"][idx]["amount"]
     user_upi = users[uid_str].get("upi", "Not set")
-
     notify_msg = (
         f"🔔 TXID received\n"
         f"User ID: {uid_str}\n"
@@ -432,10 +429,12 @@ async def buy_proof(message: types.Message, state: FSMContext):
     users[uid_str]["orders"][idx]["status"] = "proof_uploaded"
     save_db()
 
-    await message.answer("⏳ Payment proof received.\nYour order is under verification. You will be notified once confirmed.")
+    await message.answer(
+        "Your payment is under process please wait bot will confirm your payment."
+    )
     await state.clear()
 
-    # Always notify admins/owner + forward proof photo
+    # Notify admins/owner + forward proof
     amt = users[uid_str]["orders"][idx]["amount"]
     user_upi = users[uid_str].get("upi", "Not set")
     txid = users[uid_str]["orders"][idx].get("txid", "Not provided")
@@ -452,13 +451,67 @@ async def buy_proof(message: types.Message, state: FSMContext):
     for aid in admins:
         try:
             await bot.send_message(aid, notify_msg)
-            await bot.send_photo(
-                aid,
-                photo=message.photo[-1].file_id,
-                caption=notify_msg
-            )
+            await bot.send_photo(aid, photo=message.photo[-1].file_id, caption=notify_msg)
         except:
             pass
+
+
+# ────────────────────────────────────────────────
+# /confirm – user gets success message
+# ────────────────────────────────────────────────
+
+@router.message(Command("confirm"))
+async def cmd_confirm(message: types.Message):
+    if message.from_user.id not in admins:
+        return
+
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 2:
+        await message.reply("Usage: /confirm <user_id> [optional custom message]")
+        return
+
+    try:
+        target_uid = int(parts[1])
+    except ValueError:
+        await message.reply("Invalid user ID format")
+        return
+
+    target_str = str(target_uid)
+    if target_str not in users:
+        await message.reply(f"User {target_uid} not found")
+        return
+
+    if not users[target_str]["orders"]:
+        await message.reply(f"User {target_uid} has no orders")
+        return
+
+    latest_order = users[target_str]["orders"][-1]
+    if latest_order["status"] != "proof_uploaded":
+        await message.reply(f"Latest order status is '{latest_order['status']}' – not awaiting confirmation")
+        return
+
+    amount = latest_order["amount"]
+    users[target_str]["balance"] += amount
+    latest_order["status"] = "completed"
+
+    custom_msg = parts[2].strip() if len(parts) > 2 else "payment added to your wallet successfully"
+    user_message = (
+        f"✅ {custom_msg}\n"
+        f"New balance: ₹{users[target_str]['balance']:.2f}"
+    )
+
+    try:
+        await bot.send_message(target_uid, user_message)
+    except Exception as e:
+        await message.reply(f"Order confirmed, but failed to notify user: {str(e)}")
+    else:
+        await message.reply(
+            f"✅ Order confirmed for user {target_uid}\n"
+            f"₹{amount:.2f} added\n"
+            f"New balance: ₹{users[target_str]['balance']:.2f}"
+        )
+
+    save_db()
 
 
 # ────────────────────────────────────────────────
@@ -524,61 +577,6 @@ async def cb_buy(c: types.CallbackQuery, state: FSMContext):
     )
     await state.set_state(BuyOrder.waiting_for_amount)
     await c.answer()
-
-
-@router.message(Command("confirm"))
-async def cmd_confirm(message: types.Message):
-    if message.from_user.id not in admins:
-        return
-
-    parts = message.text.split(maxsplit=2)
-    if len(parts) < 2:
-        await message.reply("Usage: /confirm <user_id> [optional custom message]")
-        return
-
-    try:
-        target_uid = int(parts[1])
-    except ValueError:
-        await message.reply("Invalid user ID format")
-        return
-
-    target_str = str(target_uid)
-    if target_str not in users:
-        await message.reply(f"User {target_uid} not found")
-        return
-
-    if not users[target_str]["orders"]:
-        await message.reply(f"User {target_uid} has no orders")
-        return
-
-    latest_order = users[target_str]["orders"][-1]
-    if latest_order["status"] != "proof_uploaded":
-        await message.reply(f"Latest order status is '{latest_order['status']}' – not awaiting confirmation")
-        return
-
-    amount = latest_order["amount"]
-    users[target_str]["balance"] += amount
-    latest_order["status"] = "completed"
-
-    custom_msg = parts[2].strip() if len(parts) > 2 else None
-    user_message = (
-        custom_msg
-        or f"✅ Your order of ₹{amount:.2f} has been successfully confirmed!\n"
-           f"Added to your wallet.\nNew balance: ₹{users[target_str]['balance']:.2f}"
-    )
-
-    try:
-        await bot.send_message(target_uid, user_message)
-    except Exception as e:
-        await message.reply(f"Order confirmed, but failed to notify user: {str(e)}")
-    else:
-        await message.reply(
-            f"✅ Order confirmed for user {target_uid}\n"
-            f"₹{amount:.2f} added\n"
-            f"New balance: ₹{users[target_str]['balance']:.2f}"
-        )
-
-    save_db()
 
 
 @router.message(Command("editbalance"))
