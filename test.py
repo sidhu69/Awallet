@@ -1,5 +1,5 @@
 # awallet_bot.py
-# Fixed: TXID + proof notifications to admin (full UPI + photo), clear user prompts, confirm message
+# Fixed: TXID + proof flow in auto-QR mode (prompt, notifications, full UPI, photo to admin)
 
 import asyncio
 import json
@@ -296,7 +296,7 @@ async def reg_upi_confirm(message: types.Message, state: FSMContext):
 
 
 # ────────────────────────────────────────────────
-# BUY ORDER FLOW – fixed notifications + user prompts
+# BUY ORDER FLOW – fixed TXID + proof flow for both auto/manual
 # ────────────────────────────────────────────────
 
 @router.message(BuyOrder.waiting_for_amount)
@@ -335,9 +335,10 @@ async def buy_amount(message: types.Message, state: FSMContext):
                     "After payment, reply here with your **Transaction ID**."
                 )
             )
-            key = StorageKey(bot_id=bot.id, chat_id=message.from_user.id, user_id=message.from_user.id)
-            await dp.storage.set_state(key, BuyOrder.waiting_for_txid)
-            await dp.storage.update_data(key, {"current_order_index": len(users[uid_str]["orders"]) - 1})
+
+            # Set state properly for current user
+            await state.set_state(BuyOrder.waiting_for_txid)
+            await state.update_data(current_order_index=len(users[uid_str]["orders"]) - 1)
 
             await message.answer("⏳ Your order is ready! QR code sent above. Proceed with payment.")
 
@@ -396,9 +397,9 @@ async def buy_txid(message: types.Message, state: FSMContext):
     )
     await state.set_state(BuyOrder.waiting_for_proof)
 
-    # Notify admins/owner
     amt = users[uid_str]["orders"][idx]["amount"]
     user_upi = users[uid_str].get("upi", "Not set")
+
     notify_msg = (
         f"🔔 TXID received\n"
         f"User ID: {uid_str}\n"
@@ -434,7 +435,6 @@ async def buy_proof(message: types.Message, state: FSMContext):
     )
     await state.clear()
 
-    # Notify admins/owner + forward proof
     amt = users[uid_str]["orders"][idx]["amount"]
     user_upi = users[uid_str].get("upi", "Not set")
     txid = users[uid_str]["orders"][idx].get("txid", "Not provided")
@@ -495,10 +495,7 @@ async def cmd_confirm(message: types.Message):
     latest_order["status"] = "completed"
 
     custom_msg = parts[2].strip() if len(parts) > 2 else "payment added to your wallet successfully"
-    user_message = (
-        f"✅ {custom_msg}\n"
-        f"New balance: ₹{users[target_str]['balance']:.2f}"
-    )
+    user_message = f"✅ {custom_msg}\nNew balance: ₹{users[target_str]['balance']:.2f}"
 
     try:
         await bot.send_message(target_uid, user_message)
@@ -515,7 +512,7 @@ async def cmd_confirm(message: types.Message):
 
 
 # ────────────────────────────────────────────────
-# OTHER COMMANDS & HANDLERS (unchanged)
+# OTHER COMMANDS (unchanged)
 # ────────────────────────────────────────────────
 
 @router.callback_query(F.data == "help")
