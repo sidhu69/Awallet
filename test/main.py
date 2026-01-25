@@ -1,4 +1,4 @@
-# main.py - Bot entry point
+# main.py
 import asyncio
 import logging
 
@@ -7,7 +7,6 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import BOT_TOKEN
 from database import load_db
-from states import Registration, BuyOrder  # ← optional, but good to have
 from handlers.registration import router as reg_router
 from handlers.buy_order import router as buy_router
 from handlers.admin_commands import router as admin_router
