@@ -3,6 +3,7 @@ from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 
 from config import auto_qr_enabled, auto_qr_file_id, users, admins
+from .states import BuyOrder, Registration  # ← add this line
 from database import save_db
 from .registration import get_main_menu  # shared menu
 
