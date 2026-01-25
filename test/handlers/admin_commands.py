@@ -1,5 +1,6 @@
 # handlers/admin_commands.py
 from aiogram import Router, types
+from aiogram.filters import Command  # ← ADD THIS LINE
 
 from config import admins, users
 from database import save_db
@@ -11,6 +12,7 @@ async def cmd_confirm(message: types.Message):
     if message.from_user.id not in admins:
         return
 
+    # ... rest of the cmd_confirm function remains exactly the same ...
     parts = message.text.split(maxsplit=2)
     if len(parts) < 2:
         await message.reply("Usage: /confirm <user_id> [optional custom message]")
