@@ -5,9 +5,11 @@ from aiogram.fsm.context import FSMContext
 
 from config import welcome_media, users
 from database import save_db
-from states import Registration  # ← ADD THIS IMPORT
+from states import Registration  # ← this line fixes NameError
 
 router = Router()
+
+# ... rest of the file remains exactly the same as before ...
 
 @router.message(CommandStart(deep_link=False))
 async def cmd_start(message: types.Message, state: FSMContext):
