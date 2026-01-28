@@ -4,6 +4,7 @@ from aiogram.filters import CommandStart
 
 from utils.check_join import is_user_joined
 from keyboards.force_join import join_channel_keyboard
+from utils.send_instructions import send_voice_instructions
 
 router = Router()
 
@@ -13,16 +14,22 @@ async def start_handler(message: Message):
     bot = message.bot
     user_id = message.from_user.id
 
+    # Check if user has joined the channel
     joined = await is_user_joined(bot, user_id)
 
     if not joined:
+        # User hasn't joined → show join buttons
         await message.answer(
             "🚫 To use this bot, please join our channel first💟.",
             reply_markup=join_channel_keyboard()
         )
         return
 
-    await message.answer("✅ Welcome! You have access to the bot.")
+    # User has joined → grant access
+    await message.answer("✅ Access granted! Welcome.")
+
+    # Forward the instruction voice note
+    await send_voice_instructions(bot, user_id)
 
 
 @router.callback_query(lambda c: c.data == "confirm_join")
@@ -30,11 +37,18 @@ async def confirm_join_handler(call: CallbackQuery):
     bot = call.bot
     user_id = call.from_user.id
 
+    # Re-check if user has joined the channel
     joined = await is_user_joined(bot, user_id)
 
     if joined:
+        # Access granted → update message
         await call.message.edit_text("✅ Access granted! Welcome.")
+
+        # Forward the instruction voice note
+        await send_voice_instructions(bot, user_id)
+
     else:
+        # User still hasn't joined → alert
         await call.answer(
             "❌ You haven't joined the channel yet😒.",
             show_alert=True
