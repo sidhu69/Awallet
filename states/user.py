@@ -1,5 +1,5 @@
-from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.state import StatesGroup, State
 
 
 class UserForm(StatesGroup):
-    waiting_for_name = State()
+    name = State()
