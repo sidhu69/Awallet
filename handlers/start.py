@@ -12,8 +12,9 @@ from utils.send_instructions import send_voice_instructions
 router = Router()
 
 
+# /start → ONLY CHECK JOIN STATUS
 @router.message(CommandStart())
-async def start_handler(message: Message, state: FSMContext):
+async def start_handler(message: Message):
     bot = message.bot
     user_id = message.from_user.id
 
@@ -26,25 +27,14 @@ async def start_handler(message: Message, state: FSMContext):
         )
         return
 
-    # Access granted
-    await message.answer("✅ Access granted! Welcome.")
-
-    # Send voice instructions
-    await send_voice_instructions(bot, user_id)
-
-    # ⏱ wait 30 seconds
-    await asyncio.sleep(30)
-
-    # Ask for name (EN + HI)
     await message.answer(
-        "📝 Please enter your name\n"
-        "👉 कृपया अपना नाम बताएं"
+        "✅ You already have access.\n"
+        "Click <b>Confirm</b> below to continue 👇",
+        reply_markup=join_channel_keyboard()
     )
 
-    # Set FSM state
-    await state.set_state(UserForm.name)
 
-
+# CONFIRM BUTTON → MAIN FLOW
 @router.callback_query(lambda c: c.data == "confirm_join")
 async def confirm_join_handler(call: CallbackQuery, state: FSMContext):
     bot = call.bot
@@ -52,31 +42,33 @@ async def confirm_join_handler(call: CallbackQuery, state: FSMContext):
 
     joined = await is_user_joined(bot, user_id)
 
-    if joined:
-        await call.answer()  # stop button loading
-
-        await call.message.edit_text("✅ Access granted! Welcome.")
-
-        await send_voice_instructions(bot, user_id)
-
-        # ⏱ wait 30 seconds
-        await asyncio.sleep(30)
-
-        await call.message.answer(
-            "📝 Please enter your name\n"
-            "👉 कृपया अपना नाम बताएं"
-        )
-
-        await state.set_state(UserForm.name)
-
-    else:
+    if not joined:
         await call.answer(
             "❌ You haven't joined the channel yet 😒.",
             show_alert=True
         )
+        return
+
+    await call.answer()  # stop button loading
+
+    await call.message.edit_text("✅ Access granted! Welcome.")
+
+    # Send voice
+    await send_voice_instructions(bot, user_id)
+
+    # Wait 30 sec
+    await asyncio.sleep(30)
+
+    # Ask name once
+    await call.message.answer(
+        "📝 Please enter your name\n"
+        "👉 कृपया अपना नाम बताएं"
+    )
+
+    await state.set_state(UserForm.name)
 
 
-# ✅ HANDLE NAME INPUT
+# RECEIVE NAME
 @router.message(UserForm.name)
 async def process_name(message: Message, state: FSMContext):
     name = message.text.strip()
