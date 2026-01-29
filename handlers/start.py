@@ -121,7 +121,7 @@ async def process_upi(message: types.Message, state: FSMContext):
     name = data.get("name")
 
     # Add new user to DB
-    add_user(message.from_user.id, name, upi)
+create_user(message.from_user.id, name, upi)
 
     # ✅ Registration complete
     await message.answer(
