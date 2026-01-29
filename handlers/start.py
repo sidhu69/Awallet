@@ -8,8 +8,7 @@ from utils.check_join import is_user_joined
 from keyboards.force_join import join_channel_keyboard
 from keyboards.main_menu import main_menu_keyboard
 from utils.send_instructions import send_voice_instructions
-from database.db import get_user, create_user  # DB functions
-from database.db import get_wallet
+from database.db import get_user, create_user, get_wallet  # DB functions
 
 router = Router()
 
@@ -19,10 +18,9 @@ router = Router()
 # =========================
 @router.message(CommandStart())
 async def start_handler(message: types.Message, state: FSMContext):
-    bot = message.bot
     user_id = message.from_user.id
 
-    joined = await is_user_joined(bot, user_id)
+    joined = await is_user_joined(message.bot, user_id)
     if not joined:
         await message.answer(
             "🚫 To use this bot, please join our channel first 💟.",
@@ -54,10 +52,9 @@ async def start_handler(message: types.Message, state: FSMContext):
 # =========================
 @router.callback_query(lambda c: c.data == "confirm_join")
 async def confirm_join_handler(call: types.CallbackQuery, state: FSMContext):
-    bot = call.bot
     user_id = call.from_user.id
 
-    joined = await is_user_joined(bot, user_id)
+    joined = await is_user_joined(call.bot, user_id)
     if not joined:
         await call.answer(
             "❌ You haven't joined the channel yet 😒.",
@@ -69,7 +66,7 @@ async def confirm_join_handler(call: types.CallbackQuery, state: FSMContext):
     await call.message.edit_text("✅ Access granted! Welcome.")
 
     # 🎧 Send voice instructions
-    await send_voice_instructions(bot, user_id)
+    await send_voice_instructions(call.bot, user_id)
 
     # ⏱ Wait 30 seconds
     await asyncio.sleep(30)
@@ -121,7 +118,7 @@ async def process_upi(message: types.Message, state: FSMContext):
     name = data.get("name")
 
     # Add new user to DB
-create_user(message.from_user.id, name, upi)
+    create_user(message.from_user.id, name, upi)
 
     # ✅ Registration complete
     await message.answer(
@@ -157,4 +154,4 @@ async def show_main_menu(message: types.Message):
         "Buy your orders to earn more 💰\n\n"
         "👇 <b>Select an option below:</b>",
         reply_markup=main_menu_keyboard()
-    )
+)
