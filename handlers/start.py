@@ -31,8 +31,7 @@ async def start_handler(message: types.Message, state: FSMContext):
 
     user = get_user(user_id)
     
-    # If new user and has ref_id, we need to make sure it's stored
-    # We'll handle storage during create_user, but we can cache it in state
+    # If new user and has ref_id, store it in FSM state IMMEDIATELY
     if not user and ref_id:
         await state.update_data(referrer_id=ref_id)
 
@@ -71,7 +70,7 @@ async def confirm_join_handler(call: types.CallbackQuery, state: FSMContext):
 
     joined = await is_user_joined(call.bot, user_id)
     if not joined:
-    await call.answer(
+        await call.answer(
             "❌ You haven't joined the channel yet 😒.",
             show_alert=True
         )
@@ -79,7 +78,7 @@ async def confirm_join_handler(call: types.CallbackQuery, state: FSMContext):
 
     await call.answer()
     
-    # Check if user already registered during the sleep/wait
+    # Check if user already registered
     if get_user(user_id):
         await call.message.edit_text("✅ Welcome back!")
         wallet = get_wallet(user_id)
@@ -94,7 +93,7 @@ async def confirm_join_handler(call: types.CallbackQuery, state: FSMContext):
     # 🎧 Send voice instructions
     await send_voice_instructions(call.bot, user_id)
 
-    # ⏱ Wait 10 seconds (reduced from 30 for better UX)
+    # ⏱ Wait 10 seconds
     await asyncio.sleep(10)
 
     await call.message.answer(
@@ -113,3 +112,55 @@ async def process_name(message: types.Message, state: FSMContext):
     if len(name) < 2:
         await message.answer("❌ Please enter a valid name")
         return
+
+    await state.update_data(name=name)
+    await message.answer(f"✅ Thank you, <b>{name}</b>!")
+
+    await asyncio.sleep(1)
+    await message.answer(
+        "💳 Please enter your UPI ID to take withdrawals\n"
+        "👉 निकासी के लिए अपना UPI ID दर्ज करें"
+    )
+    await state.set_state(UserForm.upi)
+
+
+# =========================
+# RECEIVE UPI → MAIN MENU
+# =========================
+@router.message(UserForm.upi)
+async def process_upi(message: types.Message, state: FSMContext):
+    upi = message.text.strip()
+    if "@" not in upi or len(upi) < 5:
+        await message.answer(
+            "❌ Invalid UPI ID\n"
+            "👉 कृपया सही UPI ID दर्ज करें"
+        )
+        return
+
+    data = await state.get_data()
+    name = data.get("name")
+    referrer_id = data.get("referrer_id")
+    user_id = message.from_user.id
+
+    # Add new user to DB with referrer
+    create_user(user_id, name, upi, referrer_id)
+
+    # ✅ Registration complete
+    await message.answer(
+        f"✅ Registration Complete 🎉\n\n"
+        f"👤 Name: <b>{name}</b>\n"
+        f"💳 UPI: <b>{upi}</b>"
+    )
+
+    await state.clear()
+
+    # 🏠 Show main menu with wallet
+    wallet = get_wallet(user_id)
+    await message.answer(
+        f"👋 <b>Hey there! Welcome to Awallet</b> 💟\n\n"
+        "Awallet is always here to help you grow your income.\n"
+        f"Your wallet is: <b>{wallet}</b> coins\n"
+        "Buy your orders to earn more 💰\n\n"
+        "👇 <b>Select an option below:</b>",
+        reply_markup=main_menu_keyboard()
+    )
