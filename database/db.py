@@ -11,7 +11,7 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # Users table with wallet and referral
+    # Users table with wallet and referrer
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY,
@@ -45,12 +45,10 @@ def init_db():
 # USER FUNCTIONS
 # =========================
 def create_user(telegram_id: int, name: str, upi: str, referrer_id: int = None):
-    """
-    Create a new user or update existing user, preserving wallet balance.
-    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
+    # Preserve existing wallet if user already exists
     cursor.execute("""
         INSERT OR REPLACE INTO users
         (telegram_id, name, upi, wallet, created_at, referrer_id)
@@ -89,9 +87,6 @@ def get_wallet(telegram_id: int):
 
 
 def update_wallet(telegram_id: int, amount: float):
-    """
-    Add amount to user's wallet.
-    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
@@ -179,21 +174,22 @@ def add_referral_bonus(user_id: int, deposit_amount: float, percentage: float = 
     if not referrer_id:
         return  # No referrer
 
-    bonus = max(round(deposit_amount * (percentage / 100)), 1)
+    bonus = deposit_amount * (percentage / 100)
     update_wallet(referrer_id, bonus)
     return bonus
 
 
-def get_referrals(referrer_id: int):
+def get_referrals(user_id: int):
     """
-    Returns a list of tuples (user_id, wallet) for all users referred by this referrer.
+    Returns a list of users referred by user_id with their wallet balances.
+    [(ref_user_id, wallet), ...]
     """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
     cursor.execute(
         "SELECT telegram_id, wallet FROM users WHERE referrer_id = ?",
-        (referrer_id,)
+        (user_id,)
     )
 
     rows = cursor.fetchall()
