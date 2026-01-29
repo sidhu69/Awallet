@@ -1,25 +1,21 @@
 from aiogram import Router, types
-from database.db import get_wallet, get_user, get_referrer, get_referrals  # get_referrals will fetch all users referred by this user
+from aiogram.types import CallbackQuery
+from database.db import get_referrals, get_wallet
 
 router = Router()
 
-
-# =========================
-# SHOW REFERRAL STATS
-# Triggered when user clicks "Refer & Earn"
-# =========================
-@router.message(lambda m: m.text.lower() in ["refer & earn", "👥 refer & earn"])
-async def referral_stats(message: types.Message):
-    user_id = message.from_user.id
+@router.callback_query(lambda c: c.data == "refer_earn")
+async def referral_callback(call: CallbackQuery):
+    user_id = call.from_user.id
     wallet = get_wallet(user_id)
-    referrals = get_referrals(user_id)  # This function returns a list of tuples (ref_id, total_deposit)
+    referrals = get_referrals(user_id)  # returns list of referrals and their deposits
 
+    text = f"💰 Wallet: <b>{wallet}</b> coins\n🎁 Referrals:\n"
     if not referrals:
-        text = f"💰 Your Wallet: <b>{wallet}</b> coins\n\nYou have no referrals yet."
+        text += "No referrals yet!"
     else:
-        text = f"💰 Your Wallet: <b>{wallet}</b> coins\n\n🎁 Your Referrals:\n"
         for ref in referrals:
-            ref_user_id, ref_wallet = ref
-            text += f"- User ID <code>{ref_user_id}</code> deposited <b>{ref_wallet}</b> coins\n"
+            text += f"- <code>{ref[0]}</code> deposited <b>{ref[1]}</b>\n"
 
-    await message.answer(text)
+    await call.answer()  # -> acknowledge callback
+    await call.message.answer(text)
