@@ -65,7 +65,7 @@ async def receive_screenshot(message: Message, state: FSMContext):
 
     await message.answer("⏳ Please wait while we confirm your payment...")
 
-    # Forward to owner
+    # Forward to owner WITH AMOUNT
     await message.bot.send_photo(
         chat_id=OWNER_ID,
         photo=message.photo[-1].file_id,
@@ -75,7 +75,8 @@ async def receive_screenshot(message: Message, state: FSMContext):
             f"💰 Amount: <b>{amount}</b>"
         ),
         reply_markup=__import__("keyboards.admin").admin.approve_decline_kb(
-            message.from_user.id
+            message.from_user.id,
+            amount
         )
     )
 
