@@ -1,6 +1,9 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-def main_menu_keyboard():
+def main_menu_keyboard() -> InlineKeyboardMarkup:
+    """
+    Returns the main menu inline keyboard for the bot.
+    """
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🛒 Buy Orders", callback_data="buy_orders")],
