@@ -46,7 +46,7 @@ async def receive_amount(message: Message, state: FSMContext):
     await message.answer(
         f"💳 <b>Payment Details</b>\n\n"
         f"🔢 Amount: <b>{amount}</b>\n"
-        f"🏦 UPI: <b>{OWNER_UPI}</b>\n\n"
+        f"🏦 UPI: <b>{get_upi()}</b>\n\n"
         "📸 After payment, send screenshot here"
     )
 
