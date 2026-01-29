@@ -8,13 +8,13 @@ from utils.check_join import is_user_joined
 from keyboards.force_join import join_channel_keyboard
 from keyboards.main_menu import main_menu_keyboard
 from utils.send_instructions import send_voice_instructions
-from database.db import get_user, create_user, get_wallet  # DB functions
+from database.db import get_user, create_user, get_wallet, save_referral  # added save_referral
 
 router = Router()
 
 
 # =========================
-# /start → CHECK JOIN ONLY
+# /start → CHECK JOIN + REFERRAL
 # =========================
 @router.message(CommandStart())
 async def start_handler(message: types.Message, state: FSMContext):
@@ -28,8 +28,12 @@ async def start_handler(message: types.Message, state: FSMContext):
         )
         return
 
+    # Parse referral from start command: /start <ref_id>
+    parts = message.text.split()
+    ref_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+
     user = get_user(user_id)  # Check if user already exists
-    if user:  # Existing user → skip registration
+    if user:
         wallet = get_wallet(user_id)
         await message.answer(
             f"👋 Welcome back!\n"
@@ -39,7 +43,11 @@ async def start_handler(message: types.Message, state: FSMContext):
         )
         return
 
-    # New user → ask confirm to start registration
+    # New user → save referral if exists
+    if ref_id:
+        save_referral(user_id, ref_id)
+
+    # Ask confirm to start registration
     await message.answer(
         "✅ You already have access.\n"
         "Click <b>Confirm</b> below to continue 👇",
@@ -139,8 +147,3 @@ async def process_upi(message: types.Message, state: FSMContext):
         "👇 <b>Select an option below:</b>",
         reply_markup=main_menu_keyboard()
     )
-
-
-# =========================
-# /menu → SHOW MAIN MENU
-# =========================
