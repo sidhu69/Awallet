@@ -1,40 +1,50 @@
 from aiogram import Router, types
+from aiogram.types import CallbackQuery
 from database.db import get_wallet, update_wallet
 
 router = Router()
 
 
 # =========================
-# ADMIN CONFIRMS PAYMENT
+# OWNER APPROVES PAYMENT
 # =========================
-@router.message(commands=["confirm_payment"])  # Owner uses this
-async def confirm_payment(message: types.Message):
-    # Format: /confirm_payment <user_id> <amount>
-    parts = message.text.split()
-    if len(parts) != 3:
-        await message.answer("Usage: /confirm_payment <user_id> <amount>")
-        return
+@router.callback_query(lambda c: c.data.startswith("approve_"))
+async def approve_payment(call: CallbackQuery):
+    # Format: approve_userid_amount
+    _, user_id, amount = call.data.split("_")
+    user_id = int(user_id)
+    amount = int(amount)
 
-    try:
-        user_id = int(parts[1])
-        amount = int(parts[2])
-    except ValueError:
-        await message.answer("❌ Invalid user_id or amount")
-        return
-
-    # ✅ Update wallet
+    # Update user's wallet
     update_wallet(user_id, amount)
     new_balance = get_wallet(user_id)
 
-    # Notify user
-    try:
-        await message.bot.send_message(
-            user_id,
-            f"✅ Your payment has been approved, your new wallet amount is {new_balance} coins. "
-            "Please send /menu to refresh your wallet 🎉"
-        )
-    except Exception as e:
-        await message.answer(f"⚠ Could not notify user: {e}")
+    # Notify the user
+    await call.bot.send_message(
+        user_id,
+        f"✅ Your payment has been approved, your new wallet amount is {new_balance} coins. "
+        "Please send /menu to refresh your wallet 🎉"
+    )
 
-    # Confirm to admin
-    await message.answer(f"💰 Payment of {amount} coins added to user {user_id}. New balance: {new_balance}")
+    # Confirm to owner
+    await call.message.edit_text(f"✅ Payment approved for user {user_id}, added {amount} coins.")
+
+
+# =========================
+# OWNER REJECTS PAYMENT
+# =========================
+@router.callback_query(lambda c: c.data.startswith("reject_"))
+async def reject_payment(call: CallbackQuery):
+    # Format: reject_userid_amount
+    _, user_id, amount = call.data.split("_")
+    user_id = int(user_id)
+    amount = int(amount)
+
+    # Notify the user
+    await call.bot.send_message(
+        user_id,
+        f"❌ Your payment of {amount} coins was rejected by the owner."
+    )
+
+    # Confirm to owner
+    await call.message.edit_text(f"❌ Payment rejected for user {user_id}.")
