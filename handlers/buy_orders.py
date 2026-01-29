@@ -12,27 +12,37 @@ from database.db import get_upi
 router = Router()
 
 
+# =========================
 # STEP 1 → CLICK BUY ORDERS
+# =========================
 @router.callback_query(lambda c: c.data == "buy_orders")
 async def buy_orders_start(call: CallbackQuery, state: FSMContext):
     await call.answer()
 
     await call.message.answer(
-        "🛒 Enter order amount (0 – 30000)\n\n"
+        "🛒 Enter order amount (1 – 30000)\n\n"
         "👉 Please write amount you want to buy",
         reply_markup=cancel_order_kb()
     )
     await state.set_state(BuyOrder.amount)
 
 
+# =========================
 # STEP 2 → RECEIVE AMOUNT
+# =========================
 @router.message(BuyOrder.amount)
 async def receive_amount(message: Message, state: FSMContext):
+    # 🔒 CRITICAL FIX
+    if not message.text:
+        await message.answer("❌ Please send numbers only")
+        return
+
     if not message.text.isdigit():
         await message.answer("❌ Enter valid number")
         return
 
     amount = int(message.text)
+
     if amount <= 0 or amount > 30000:
         await message.answer("❌ Amount must be between 1 and 30000")
         return
@@ -41,7 +51,7 @@ async def receive_amount(message: Message, state: FSMContext):
 
     await message.answer("⏳ Please wait, creating your order...")
 
-    await asyncio.sleep(random.randint(5, 10))
+    await asyncio.sleep(random.randint(3, 6))
 
     await message.answer(
         f"💳 <b>Payment Details</b>\n\n"
@@ -53,7 +63,9 @@ async def receive_amount(message: Message, state: FSMContext):
     await state.set_state(BuyOrder.screenshot)
 
 
+# =========================
 # STEP 3 → RECEIVE SCREENSHOT
+# =========================
 @router.message(BuyOrder.screenshot)
 async def receive_screenshot(message: Message, state: FSMContext):
     if not message.photo:
@@ -65,7 +77,6 @@ async def receive_screenshot(message: Message, state: FSMContext):
 
     await message.answer("⏳ Please wait while we confirm your payment...")
 
-    # Forward to owner WITH AMOUNT
     await message.bot.send_photo(
         chat_id=OWNER_ID,
         photo=message.photo[-1].file_id,
