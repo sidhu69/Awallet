@@ -39,6 +39,24 @@ def init_db():
     conn.commit()
     conn.close()
 
+    # Ensure wallet column exists for old databases
+    add_wallet_column()
+
+
+# =========================
+# ADD WALLET COLUMN IF MISSING
+# =========================
+def add_wallet_column():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN wallet INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        # Column already exists
+        pass
+    conn.commit()
+    conn.close()
+
 
 # =========================
 # USER FUNCTIONS
@@ -47,6 +65,7 @@ def create_user(telegram_id: int, name: str, upi: str):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
+    # Preserve existing wallet if user already exists
     cursor.execute("""
         INSERT OR REPLACE INTO users
         (telegram_id, name, upi, wallet, created_at)
