@@ -144,14 +144,3 @@ async def process_upi(message: types.Message, state: FSMContext):
 # =========================
 # /menu → SHOW MAIN MENU
 # =========================
-@router.message(commands=["menu"])
-async def show_main_menu(message: types.Message):
-    wallet = get_wallet(message.from_user.id)
-    await message.answer(
-        f"👋 <b>Hey there! Welcome to Awallet 💟</b>\n\n"
-        "Awallet is always here to help you grow your income.\n"
-        f"Your wallet is: <b>{wallet}</b> coins\n"
-        "Buy your orders to earn more 💰\n\n"
-        "👇 <b>Select an option below:</b>",
-        reply_markup=main_menu_keyboard()
-)
