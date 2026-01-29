@@ -6,7 +6,8 @@ from aiogram.fsm.context import FSMContext
 
 from states.order import BuyOrder
 from keyboards.buy_orders import cancel_order_kb
-from config import OWNER_ID, OWNER_UPI
+from config import OWNER_ID
+from database.db import get_upi
 
 router = Router()
 
