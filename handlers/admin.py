@@ -1,7 +1,7 @@
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from config import OWNER_ID
-from database.db import set_upi, update_wallet
+from database.db import set_upi, update_wallet, get_referrer, update_wallet  # Added get_referrer for referral bonus
 
 router = Router()
 
@@ -41,8 +41,21 @@ async def approve_payment(call: CallbackQuery):
         await call.answer("Invalid data", show_alert=True)
         return
 
-    # ✅ Update wallet balance
+    # ✅ Update user's wallet balance
     update_wallet(user_id, amount)
+
+    # ✅ Check for referrer
+    referrer_id = get_referrer(user_id)
+    if referrer_id:
+        bonus = round(amount * 0.004)  # 0.4% referral bonus
+        if bonus > 0:
+            update_wallet(referrer_id, bonus)
+            # Notify referrer
+            await call.bot.send_message(
+                referrer_id,
+                f"💸 You received a referral bonus of <b>{bonus}</b> coins "
+                f"from user <code>{user_id}</code> deposit!"
+            )
 
     await call.answer("Payment approved")
 
@@ -59,8 +72,7 @@ async def approve_payment(call: CallbackQuery):
     # ✅ Notify user
     await call.bot.send_message(
         user_id,
-        "✅ Your payment has been approved 🎉\n"
-        f"💰 {amount} coins added to your wallet"
+        f"✅ Your payment has been approved 🎉\n💰 {amount} coins added to your wallet"
     )
 
 
