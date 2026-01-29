@@ -1,18 +1,21 @@
+import asyncio
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
-import asyncio
 from aiogram.fsm.context import FSMContext
 
 from states.user import UserForm
 from utils.check_join import is_user_joined
 from keyboards.force_join import join_channel_keyboard
+from keyboards.main_menu import main_menu_keyboard
 from utils.send_instructions import send_voice_instructions
 
 router = Router()
 
 
-# /start → ONLY CHECK JOIN STATUS
+# =========================
+# /start → CHECK JOIN ONLY
+# =========================
 @router.message(CommandStart())
 async def start_handler(message: Message):
     bot = message.bot
@@ -34,7 +37,9 @@ async def start_handler(message: Message):
     )
 
 
-# CONFIRM BUTTON → MAIN FLOW
+# =========================
+# CONFIRM BUTTON → FLOW
+# =========================
 @router.callback_query(lambda c: c.data == "confirm_join")
 async def confirm_join_handler(call: CallbackQuery, state: FSMContext):
     bot = call.bot
@@ -49,17 +54,16 @@ async def confirm_join_handler(call: CallbackQuery, state: FSMContext):
         )
         return
 
-    await call.answer()  # stop button loading
-
+    await call.answer()  # stop loading animation
     await call.message.edit_text("✅ Access granted! Welcome.")
 
-    # Send voice
+    # 🎧 Send voice instructions
     await send_voice_instructions(bot, user_id)
 
-    # Wait 30 sec
+    # ⏱ Wait 30 seconds
     await asyncio.sleep(30)
 
-    # Ask name once
+    # 📝 Ask for name
     await call.message.answer(
         "📝 Please enter your name\n"
         "👉 कृपया अपना नाम बताएं"
@@ -68,7 +72,9 @@ async def confirm_join_handler(call: CallbackQuery, state: FSMContext):
     await state.set_state(UserForm.name)
 
 
+# =========================
 # RECEIVE NAME
+# =========================
 @router.message(UserForm.name)
 async def process_name(message: Message, state: FSMContext):
     name = message.text.strip()
@@ -83,7 +89,7 @@ async def process_name(message: Message, state: FSMContext):
         f"✅ Thank you, <b>{name}</b>!"
     )
 
-    # ⏱ wait 2 seconds
+    # ⏱ Wait 2 seconds
     await asyncio.sleep(2)
 
     await message.answer(
@@ -93,6 +99,10 @@ async def process_name(message: Message, state: FSMContext):
 
     await state.set_state(UserForm.upi)
 
+
+# =========================
+# RECEIVE UPI → MAIN MENU
+# =========================
 @router.message(UserForm.upi)
 async def process_upi(message: Message, state: FSMContext):
     upi = message.text.strip()
@@ -105,14 +115,25 @@ async def process_upi(message: Message, state: FSMContext):
         return
 
     await state.update_data(upi=upi)
-
     data = await state.get_data()
+
     name = data.get("name")
 
+    # ✅ Registration complete
     await message.answer(
         "✅ Registration Complete 🎉\n\n"
         f"👤 Name: <b>{name}</b>\n"
         f"💳 UPI: <b>{upi}</b>"
     )
 
+    # 🧹 Clear FSM
     await state.clear()
+
+    # 🏠 Main Menu
+    await message.answer(
+        "👋 <b>Hey there! Welcome to Awallet</b> 💟\n\n"
+        "Awallet is always here to help you grow your income.\n"
+        "Buy your orders to earn more 💰\n\n"
+        "👇 <b>Select an option below:</b>",
+        reply_markup=main_menu_keyboard()
+    )
