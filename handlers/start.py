@@ -1,6 +1,5 @@
 import asyncio
-from aiogram import Router
-from aiogram.types import Message, CallbackQuery
+from aiogram import Router, types
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 
@@ -9,6 +8,8 @@ from utils.check_join import is_user_joined
 from keyboards.force_join import join_channel_keyboard
 from keyboards.main_menu import main_menu_keyboard
 from utils.send_instructions import send_voice_instructions
+from database.db import get_user, add_user  # DB functions
+from database.db import get_wallet
 
 router = Router()
 
@@ -17,12 +18,11 @@ router = Router()
 # /start → CHECK JOIN ONLY
 # =========================
 @router.message(CommandStart())
-async def start_handler(message: Message):
+async def start_handler(message: types.Message, state: FSMContext):
     bot = message.bot
     user_id = message.from_user.id
 
     joined = await is_user_joined(bot, user_id)
-
     if not joined:
         await message.answer(
             "🚫 To use this bot, please join our channel first 💟.",
@@ -30,6 +30,18 @@ async def start_handler(message: Message):
         )
         return
 
+    user = get_user(user_id)  # Check if user already exists
+    if user:  # Existing user → skip registration
+        wallet = get_wallet(user_id)
+        await message.answer(
+            f"👋 Welcome back!\n"
+            f"Your wallet balance is: <b>{wallet}</b> coins\n\n"
+            "👇 Select an option below:",
+            reply_markup=main_menu_keyboard()
+        )
+        return
+
+    # New user → ask confirm to start registration
     await message.answer(
         "✅ You already have access.\n"
         "Click <b>Confirm</b> below to continue 👇",
@@ -41,12 +53,11 @@ async def start_handler(message: Message):
 # CONFIRM BUTTON → FLOW
 # =========================
 @router.callback_query(lambda c: c.data == "confirm_join")
-async def confirm_join_handler(call: CallbackQuery, state: FSMContext):
+async def confirm_join_handler(call: types.CallbackQuery, state: FSMContext):
     bot = call.bot
     user_id = call.from_user.id
 
     joined = await is_user_joined(bot, user_id)
-
     if not joined:
         await call.answer(
             "❌ You haven't joined the channel yet 😒.",
@@ -68,7 +79,6 @@ async def confirm_join_handler(call: CallbackQuery, state: FSMContext):
         "📝 Please enter your name\n"
         "👉 कृपया अपना नाम बताएं"
     )
-
     await state.set_state(UserForm.name)
 
 
@@ -76,27 +86,21 @@ async def confirm_join_handler(call: CallbackQuery, state: FSMContext):
 # RECEIVE NAME
 # =========================
 @router.message(UserForm.name)
-async def process_name(message: Message, state: FSMContext):
+async def process_name(message: types.Message, state: FSMContext):
     name = message.text.strip()
-
     if len(name) < 2:
         await message.answer("❌ Please enter a valid name")
         return
 
     await state.update_data(name=name)
-
-    await message.answer(
-        f"✅ Thank you, <b>{name}</b>!"
-    )
+    await message.answer(f"✅ Thank you, <b>{name}</b>!")
 
     # ⏱ Wait 2 seconds
     await asyncio.sleep(2)
-
     await message.answer(
         "💳 Please enter your UPI ID to take withdrawals\n"
         "👉 निकासी के लिए अपना UPI ID दर्ज करें"
     )
-
     await state.set_state(UserForm.upi)
 
 
@@ -104,9 +108,8 @@ async def process_name(message: Message, state: FSMContext):
 # RECEIVE UPI → MAIN MENU
 # =========================
 @router.message(UserForm.upi)
-async def process_upi(message: Message, state: FSMContext):
+async def process_upi(message: types.Message, state: FSMContext):
     upi = message.text.strip()
-
     if "@" not in upi or len(upi) < 5:
         await message.answer(
             "❌ Invalid UPI ID\n"
@@ -114,25 +117,43 @@ async def process_upi(message: Message, state: FSMContext):
         )
         return
 
-    await state.update_data(upi=upi)
     data = await state.get_data()
-
     name = data.get("name")
+
+    # Add new user to DB
+    add_user(message.from_user.id, name, upi)
 
     # ✅ Registration complete
     await message.answer(
-        "✅ Registration Complete 🎉\n\n"
+        f"✅ Registration Complete 🎉\n\n"
         f"👤 Name: <b>{name}</b>\n"
         f"💳 UPI: <b>{upi}</b>"
     )
 
-    # 🧹 Clear FSM
-    await state.clear()
+    await state.clear()  # clear FSM
 
-    # 🏠 Main Menu
+    # 🏠 Show main menu with wallet
+    wallet = get_wallet(message.from_user.id)
     await message.answer(
-        "👋 <b>Hey there! Welcome to Awallet</b> 💟\n\n"
+        f"👋 <b>Hey there! Welcome to Awallet</b> 💟\n\n"
         "Awallet is always here to help you grow your income.\n"
+        f"Your wallet is: <b>{wallet}</b> coins\n"
+        "Buy your orders to earn more 💰\n\n"
+        "👇 <b>Select an option below:</b>",
+        reply_markup=main_menu_keyboard()
+    )
+
+
+# =========================
+# /menu → SHOW MAIN MENU
+# =========================
+@router.message(commands=["menu"])
+async def show_main_menu(message: types.Message):
+    wallet = get_wallet(message.from_user.id)
+    await message.answer(
+        f"👋 <b>Hey there! Welcome to Awallet 💟</b>\n\n"
+        "Awallet is always here to help you grow your income.\n"
+        f"Your wallet is: <b>{wallet}</b> coins\n"
         "Buy your orders to earn more 💰\n\n"
         "👇 <b>Select an option below:</b>",
         reply_markup=main_menu_keyboard()
