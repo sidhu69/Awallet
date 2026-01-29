@@ -95,8 +95,10 @@ def update_wallet(telegram_id: int, amount: float):
         (amount, telegram_id)
     )
 
+    success = cursor.rowcount > 0
     conn.commit()
     conn.close()
+    return success
 
 
 # =========================
