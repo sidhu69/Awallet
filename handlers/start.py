@@ -8,7 +8,7 @@ from utils.check_join import is_user_joined
 from keyboards.force_join import join_channel_keyboard
 from keyboards.main_menu import main_menu_keyboard
 from utils.send_instructions import send_voice_instructions
-from database.db import get_user, create_user, get_wallet, save_referral  # added save_referral
+from database.db import get_user, create_user, get_wallet, save_referral  # save_referral included
 
 router = Router()
 
