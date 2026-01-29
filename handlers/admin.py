@@ -1,115 +1,167 @@
-from aiogram import Router
-from aiogram.types import Message, CallbackQuery
-from config import OWNER_ID
-from database.db import set_upi, update_wallet, get_referrer, get_wallet
+import asyncio
+from aiogram import Router, types
+from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
+
+from states.user import UserForm
+from utils.check_join import is_user_joined
+from keyboards.force_join import join_channel_keyboard
+from keyboards.main_menu import main_menu_keyboard
+from utils.send_instructions import send_voice_instructions
+from database.db import get_user, create_user, get_wallet, save_referral
 
 router = Router()
 
 
 # =========================
-# OWNER: CHANGE UPI
-# Command: /upi yourupi@bank
+# /start → CHECK JOIN + REFERRAL
 # =========================
-@router.message(lambda m: m.text and m.text.startswith("/upi"))
-async def change_upi(message: Message):
-    if message.from_user.id != OWNER_ID:
-        return
+@router.message(CommandStart())
+async def start_handler(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
 
+    # Parse referral from start command: /start <ref_id>
     parts = message.text.split()
-    if len(parts) != 2:
-        await message.answer("Usage: /upi yourupi@bank")
+    ref_id = None
+    if len(parts) > 1 and parts[1].isdigit():
+        ref_id = int(parts[1])
+        # Don't refer yourself
+        if ref_id == user_id:
+            ref_id = None
+
+    user = get_user(user_id)
+    
+    # If new user and has ref_id, we need to make sure it's stored
+    # We'll handle storage during create_user, but we can cache it in state
+    if not user and ref_id:
+        await state.update_data(referrer_id=ref_id)
+
+    joined = await is_user_joined(message.bot, user_id)
+    if not joined:
+        await message.answer(
+            "🚫 To use this bot, please join our channel first 💟.",
+            reply_markup=join_channel_keyboard()
+        )
         return
 
-    set_upi(parts[1])
-    await message.answer(f"✅ UPI updated to: {parts[1]}")
-
-
-# =========================
-# OWNER: APPROVE PAYMENT
-# callback_data: approve_<user_id>_<amount>
-# =========================
-@router.callback_query(lambda c: c.data.startswith("approve_"))
-async def approve_payment(call: CallbackQuery):
-    if call.from_user.id != OWNER_ID:
-        await call.answer("Not authorized", show_alert=True)
+    if user:
+        wallet = get_wallet(user_id)
+        await message.answer(
+            f"👋 Welcome back!\n"
+            f"Your wallet balance is: <b>{wallet}</b> coins\n\n"
+            "👇 Select an option below:",
+            reply_markup=main_menu_keyboard()
+        )
         return
 
-    try:
-        parts = call.data.split("_")
-        user_id = int(parts[1])
-        amount = int(parts[2])
-    except (ValueError, IndexError):
-        await call.answer("Invalid data", show_alert=True)
-        return
-
-    # ✅ Update user's wallet and check if user exists
-    if not update_wallet(user_id, amount):
-        await call.answer("❌ Error: User not found in database!", show_alert=True)
-        return
-
-    # ✅ Handle referral bonus
-    referrer_id = get_referrer(user_id)
-    if referrer_id:
-        # Bonus calculation: 0.4%
-        bonus = amount * 0.004
-        if bonus > 0:
-            update_wallet(referrer_id, bonus)
-            # Notify referrer
-            try:
-                await call.bot.send_message(
-                    referrer_id,
-                    f"💸 You received a referral bonus of <b>{bonus:.2f}</b> coins "
-                    f"from user <code>{user_id}</code> deposit!"
-                )
-            except Exception:
-                pass # Referrer might have blocked bot
-
-    await call.answer("✅ Payment approved")
-
-    # ✅ Edit admin message safely
-    new_text = f"✅ Payment Approved\n👤 User: <code>{user_id}</code>\n💰 Amount: {amount}"
-    if call.message.caption:
-        await call.message.edit_caption(caption=new_text)
-    else:
-        await call.message.edit_text(text=new_text)
-
-    # ✅ Notify user
-    new_bal = get_wallet(user_id)
-    await call.bot.send_message(
-        user_id,
-        f"✅ Your payment has been approved 🎉\n💰 {amount} coins added to your wallet\n📊 New Balance: <b>{new_bal}</b> coins"
+    # New user who has joined
+    await message.answer(
+        "✅ You already have access.\n"
+        "Click <b>Confirm</b> below to continue 👇",
+        reply_markup=join_channel_keyboard()
     )
 
 
 # =========================
-# OWNER: DECLINE PAYMENT
-# callback_data: decline_<user_id>_<amount>
+# CONFIRM BUTTON → FLOW
 # =========================
-@router.callback_query(lambda c: c.data.startswith("decline_"))
-async def decline_payment(call: CallbackQuery):
-    if call.from_user.id != OWNER_ID:
-        await call.answer("Not authorized", show_alert=True)
+@router.callback_query(lambda c: c.data == "confirm_join")
+async def confirm_join_handler(call: types.CallbackQuery, state: FSMContext):
+    user_id = call.from_user.id
+
+    joined = await is_user_joined(call.bot, user_id)
+    if not joined:
+        await call.answer(
+            "❌ You haven't joined the channel yet 😒.",
+            show_alert=True
+        )
         return
 
-    try:
-        parts = call.data.split("_")
-        user_id = int(parts[1])
-        amount = int(parts[2])
-    except (ValueError, IndexError):
-        await call.answer("Invalid data", show_alert=True)
+    await call.answer()
+    
+    # Check if user already registered during the sleep/wait
+    if get_user(user_id):
+        await call.message.edit_text("✅ Welcome back!")
+        wallet = get_wallet(user_id)
+        await call.message.answer(
+            f"Your wallet balance is: <b>{wallet}</b> coins",
+            reply_markup=main_menu_keyboard()
+        )
         return
 
-    await call.answer("❌ Payment declined")
+    await call.message.edit_text("✅ Access granted! Welcome.")
 
-    # ✅ Edit admin message safely
-    new_text = f"❌ Payment Declined\n👤 User: <code>{user_id}</code>\n💰 Amount: {amount}"
-    if call.message.caption:
-        await call.message.edit_caption(caption=new_text)
-    else:
-        await call.message.edit_text(text=new_text)
+    # 🎧 Send voice instructions
+    await send_voice_instructions(call.bot, user_id)
 
-    # ✅ Notify user
-    await call.bot.send_message(
-        user_id,
-        "❌ Your payment was declined. Please contact support."
+    # ⏱ Wait 10 seconds (reduced from 30 for better UX)
+    await asyncio.sleep(10)
+
+    await call.message.answer(
+        "📝 Please enter your name\n"
+        "👉 कृपया अपना नाम बताएं"
+    )
+    await state.set_state(UserForm.name)
+
+
+# =========================
+# RECEIVE NAME
+# =========================
+@router.message(UserForm.name)
+async def process_name(message: types.Message, state: FSMContext):
+    name = message.text.strip()
+    if len(name) < 2:
+        await message.answer("❌ Please enter a valid name")
+        return
+
+    await state.update_data(name=name)
+    await message.answer(f"✅ Thank you, <b>{name}</b>!")
+
+    await asyncio.sleep(1)
+    await message.answer(
+        "💳 Please enter your UPI ID to take withdrawals\n"
+        "👉 निकासी के लिए अपना UPI ID दर्ज करें"
+    )
+    await state.set_state(UserForm.upi)
+
+
+# =========================
+# RECEIVE UPI → MAIN MENU
+# =========================
+@router.message(UserForm.upi)
+async def process_upi(message: types.Message, state: FSMContext):
+    upi = message.text.strip()
+    if "@" not in upi or len(upi) < 5:
+        await message.answer(
+            "❌ Invalid UPI ID\n"
+            "👉 कृपया सही UPI ID दर्ज करें"
+        )
+        return
+
+    data = await state.get_data()
+    name = data.get("name")
+    referrer_id = data.get("referrer_id")
+    user_id = message.from_user.id
+
+    # Add new user to DB with referrer
+    create_user(user_id, name, upi, referrer_id)
+
+    # ✅ Registration complete
+    await message.answer(
+        f"✅ Registration Complete 🎉\n\n"
+        f"👤 Name: <b>{name}</b>\n"
+        f"💳 UPI: <b>{upi}</b>"
+    )
+
+    await state.clear()
+
+    # 🏠 Show main menu with wallet
+    wallet = get_wallet(user_id)
+    await message.answer(
+        f"👋 <b>Hey there! Welcome to Awallet</b> 💟\n\n"
+        "Awallet is always here to help you grow your income.\n"
+        f"Your wallet is: <b>{wallet}</b> coins\n"
+        "Buy your orders to earn more 💰\n\n"
+        "👇 <b>Select an option below:</b>",
+        reply_markup=main_menu_keyboard()
     )
