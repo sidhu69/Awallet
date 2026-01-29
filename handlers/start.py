@@ -124,9 +124,10 @@ async def process_upi(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     name = data.get("name")
+    user_id = message.from_user.id
 
-    # Add new user to DB
-    create_user(message.from_user.id, name, upi)
+    # Add new user to DB (referrer already saved in save_referral if applicable)
+    create_user(user_id, name, upi)
 
     # ✅ Registration complete
     await message.answer(
@@ -138,7 +139,7 @@ async def process_upi(message: types.Message, state: FSMContext):
     await state.clear()  # clear FSM
 
     # 🏠 Show main menu with wallet
-    wallet = get_wallet(message.from_user.id)
+    wallet = get_wallet(user_id)
     await message.answer(
         f"👋 <b>Hey there! Welcome to Awallet</b> 💟\n\n"
         "Awallet is always here to help you grow your income.\n"
