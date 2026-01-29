@@ -5,9 +5,9 @@ from database.db import set_upi, update_wallet
 
 router = Router()
 
-
 # =========================
 # OWNER: CHANGE UPI
+# Command: /upi yourupi@bank
 # =========================
 @router.message(lambda m: m.text and m.text.startswith("/upi"))
 async def change_upi(message: Message):
@@ -33,21 +33,33 @@ async def approve_payment(call: CallbackQuery):
         await call.answer("Not authorized", show_alert=True)
         return
 
-    _, user_id, amount = call.data.split("_")
-    user_id = int(user_id)
-    amount = int(amount)
+    try:
+        _, user_id, amount = call.data.split("_")
+        user_id = int(user_id)
+        amount = int(amount)
+    except ValueError:
+        await call.answer("Invalid data", show_alert=True)
+        return
 
-    # ✅ update wallet
+    # ✅ Update wallet balance
     update_wallet(user_id, amount)
 
     await call.answer("Payment approved")
-    await call.message.edit_caption(
-        f"✅ Payment Approved\n💰 Amount: {amount}"
-    )
 
+    # ✅ Edit admin message safely
+    if call.message.caption:
+        await call.message.edit_caption(
+            f"✅ Payment Approved\n💰 Amount: {amount}"
+        )
+    else:
+        await call.message.edit_text(
+            f"✅ Payment Approved\n💰 Amount: {amount}"
+        )
+
+    # ✅ Notify user
     await call.bot.send_message(
         user_id,
-        f"✅ Your payment has been approved 🎉\n"
+        "✅ Your payment has been approved 🎉\n"
         f"💰 {amount} coins added to your wallet"
     )
 
@@ -62,12 +74,27 @@ async def decline_payment(call: CallbackQuery):
         await call.answer("Not authorized", show_alert=True)
         return
 
-    _, user_id, amount = call.data.split("_")
-    user_id = int(user_id)
+    try:
+        _, user_id, amount = call.data.split("_")
+        user_id = int(user_id)
+        amount = int(amount)
+    except ValueError:
+        await call.answer("Invalid data", show_alert=True)
+        return
 
     await call.answer("Payment declined")
-    await call.message.edit_caption("❌ Payment Declined")
 
+    # ✅ Edit admin message safely
+    if call.message.caption:
+        await call.message.edit_caption(
+            f"❌ Payment Declined\n💰 Amount: {amount}"
+        )
+    else:
+        await call.message.edit_text(
+            f"❌ Payment Declined\n💰 Amount: {amount}"
+        )
+
+    # ✅ Notify user
     await call.bot.send_message(
         user_id,
         "❌ Your payment was declined. Please contact support."
