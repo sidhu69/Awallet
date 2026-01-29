@@ -1,7 +1,7 @@
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from config import OWNER_ID
-from database.db import set_upi, update_wallet, get_referrer  # get_referrer for referral bonus
+from database.db import set_upi, update_wallet, get_referrer, get_wallet
 
 router = Router()
 
@@ -35,41 +35,49 @@ async def approve_payment(call: CallbackQuery):
         return
 
     try:
-        _, user_id, amount = call.data.split("_")
-        user_id = int(user_id)
-        amount = int(amount)
-    except ValueError:
+        parts = call.data.split("_")
+        user_id = int(parts[1])
+        amount = int(parts[2])
+    except (ValueError, IndexError):
         await call.answer("Invalid data", show_alert=True)
         return
 
-    # ✅ Update user's wallet
-    update_wallet(user_id, amount)
+    # ✅ Update user's wallet and check if user exists
+    if not update_wallet(user_id, amount):
+        await call.answer("❌ Error: User not found in database!", show_alert=True)
+        return
 
     # ✅ Handle referral bonus
     referrer_id = get_referrer(user_id)
     if referrer_id:
-        bonus = max(round(amount * 0.004), 1)  # 0.4%, at least 1 coin if >0
+        # Bonus calculation: 0.4%
+        bonus = amount * 0.004
         if bonus > 0:
             update_wallet(referrer_id, bonus)
             # Notify referrer
-            await call.bot.send_message(
-                referrer_id,
-                f"💸 You received a referral bonus of <b>{bonus}</b> coins "
-                f"from user <code>{user_id}</code> deposit!"
-            )
+            try:
+                await call.bot.send_message(
+                    referrer_id,
+                    f"💸 You received a referral bonus of <b>{bonus:.2f}</b> coins "
+                    f"from user <code>{user_id}</code> deposit!"
+                )
+            except Exception:
+                pass # Referrer might have blocked bot
 
     await call.answer("✅ Payment approved")
 
     # ✅ Edit admin message safely
+    new_text = f"✅ Payment Approved\n👤 User: <code>{user_id}</code>\n💰 Amount: {amount}"
     if call.message.caption:
-        await call.message.edit_caption(f"✅ Payment Approved\n💰 Amount: {amount}")
+        await call.message.edit_caption(caption=new_text)
     else:
-        await call.message.edit_text(f"✅ Payment Approved\n💰 Amount: {amount}")
+        await call.message.edit_text(text=new_text)
 
     # ✅ Notify user
+    new_bal = get_wallet(user_id)
     await call.bot.send_message(
         user_id,
-        f"✅ Your payment has been approved 🎉\n💰 {amount} coins added to your wallet"
+        f"✅ Your payment has been approved 🎉\n💰 {amount} coins added to your wallet\n📊 New Balance: <b>{new_bal}</b> coins"
     )
 
 
@@ -84,23 +92,24 @@ async def decline_payment(call: CallbackQuery):
         return
 
     try:
-        _, user_id, amount = call.data.split("_")
-        user_id = int(user_id)
-        amount = int(amount)
-    except ValueError:
+        parts = call.data.split("_")
+        user_id = int(parts[1])
+        amount = int(parts[2])
+    except (ValueError, IndexError):
         await call.answer("Invalid data", show_alert=True)
         return
 
     await call.answer("❌ Payment declined")
 
     # ✅ Edit admin message safely
+    new_text = f"❌ Payment Declined\n👤 User: <code>{user_id}</code>\n💰 Amount: {amount}"
     if call.message.caption:
-        await call.message.edit_caption(f"❌ Payment Declined\n💰 Amount: {amount}")
+        await call.message.edit_caption(caption=new_text)
     else:
-        await call.message.edit_text(f"❌ Payment Declined\n💰 Amount: {amount}")
+        await call.message.edit_text(text=new_text)
 
     # ✅ Notify user
     await call.bot.send_message(
         user_id,
         "❌ Your payment was declined. Please contact support."
-            )
+    )
