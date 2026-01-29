@@ -11,12 +11,13 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # Users table
+    # Users table with wallet
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY,
             name TEXT,
             upi TEXT,
+            wallet INTEGER DEFAULT 0,
             created_at TEXT
         )
     """)
@@ -48,9 +49,9 @@ def create_user(telegram_id: int, name: str, upi: str):
 
     cursor.execute("""
         INSERT OR REPLACE INTO users
-        (telegram_id, name, upi, created_at)
-        VALUES (?, ?, ?, ?)
-    """, (telegram_id, name, upi, datetime.now().isoformat()))
+        (telegram_id, name, upi, wallet, created_at)
+        VALUES (?, ?, ?, COALESCE((SELECT wallet FROM users WHERE telegram_id = ?), 0), ?)
+    """, (telegram_id, name, upi, telegram_id, datetime.now().isoformat()))
 
     conn.commit()
     conn.close()
@@ -68,6 +69,32 @@ def get_user(telegram_id: int):
     user = cursor.fetchone()
     conn.close()
     return user
+
+
+# =========================
+# WALLET FUNCTIONS
+# =========================
+def get_wallet(telegram_id: int):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT wallet FROM users WHERE telegram_id = ?", (telegram_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+
+def update_wallet(telegram_id: int, amount: int):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "UPDATE users SET wallet = wallet + ? WHERE telegram_id = ?",
+        (amount, telegram_id)
+    )
+
+    conn.commit()
+    conn.close()
 
 
 # =========================
