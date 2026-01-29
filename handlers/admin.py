@@ -1,9 +1,10 @@
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from config import OWNER_ID
-from database.db import set_upi, update_wallet, get_referrer, update_wallet  # Added get_referrer for referral bonus
+from database.db import set_upi, update_wallet, get_referrer  # get_referrer used for referral bonus
 
 router = Router()
+
 
 # =========================
 # OWNER: CHANGE UPI
