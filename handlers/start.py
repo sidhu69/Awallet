@@ -80,8 +80,39 @@ async def process_name(message: Message, state: FSMContext):
     await state.update_data(name=name)
 
     await message.answer(
-        f"✅ Thank you, <b>{name}</b>!\n"
-        "You are successfully registered 🎉"
+        f"✅ Thank you, <b>{name}</b>!"
+    )
+
+    # ⏱ wait 2 seconds
+    await asyncio.sleep(2)
+
+    await message.answer(
+        "💳 Please enter your UPI ID to take withdrawals\n"
+        "👉 निकासी के लिए अपना UPI ID दर्ज करें"
+    )
+
+    await state.set_state(UserForm.upi)
+
+@router.message(UserForm.upi)
+async def process_upi(message: Message, state: FSMContext):
+    upi = message.text.strip()
+
+    if "@" not in upi or len(upi) < 5:
+        await message.answer(
+            "❌ Invalid UPI ID\n"
+            "👉 कृपया सही UPI ID दर्ज करें"
+        )
+        return
+
+    await state.update_data(upi=upi)
+
+    data = await state.get_data()
+    name = data.get("name")
+
+    await message.answer(
+        "✅ Registration Complete 🎉\n\n"
+        f"👤 Name: <b>{name}</b>\n"
+        f"💳 UPI: <b>{upi}</b>"
     )
 
     await state.clear()
