@@ -1,7 +1,7 @@
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from config import OWNER_ID
-from database.db import set_upi, update_wallet, get_referrer  # get_referrer used for referral bonus
+from database.db import set_upi, update_wallet, get_referrer  # get_referrer for referral bonus
 
 router = Router()
 
@@ -42,13 +42,13 @@ async def approve_payment(call: CallbackQuery):
         await call.answer("Invalid data", show_alert=True)
         return
 
-    # ✅ Update user's wallet balance
+    # ✅ Update user's wallet
     update_wallet(user_id, amount)
 
-    # ✅ Check for referrer
+    # ✅ Handle referral bonus
     referrer_id = get_referrer(user_id)
     if referrer_id:
-        bonus = round(amount * 0.004)  # 0.4% referral bonus
+        bonus = max(round(amount * 0.004), 1)  # 0.4%, at least 1 coin if >0
         if bonus > 0:
             update_wallet(referrer_id, bonus)
             # Notify referrer
@@ -58,17 +58,13 @@ async def approve_payment(call: CallbackQuery):
                 f"from user <code>{user_id}</code> deposit!"
             )
 
-    await call.answer("Payment approved")
+    await call.answer("✅ Payment approved")
 
     # ✅ Edit admin message safely
     if call.message.caption:
-        await call.message.edit_caption(
-            f"✅ Payment Approved\n💰 Amount: {amount}"
-        )
+        await call.message.edit_caption(f"✅ Payment Approved\n💰 Amount: {amount}")
     else:
-        await call.message.edit_text(
-            f"✅ Payment Approved\n💰 Amount: {amount}"
-        )
+        await call.message.edit_text(f"✅ Payment Approved\n💰 Amount: {amount}")
 
     # ✅ Notify user
     await call.bot.send_message(
@@ -95,20 +91,16 @@ async def decline_payment(call: CallbackQuery):
         await call.answer("Invalid data", show_alert=True)
         return
 
-    await call.answer("Payment declined")
+    await call.answer("❌ Payment declined")
 
     # ✅ Edit admin message safely
     if call.message.caption:
-        await call.message.edit_caption(
-            f"❌ Payment Declined\n💰 Amount: {amount}"
-        )
+        await call.message.edit_caption(f"❌ Payment Declined\n💰 Amount: {amount}")
     else:
-        await call.message.edit_text(
-            f"❌ Payment Declined\n💰 Amount: {amount}"
-        )
+        await call.message.edit_text(f"❌ Payment Declined\n💰 Amount: {amount}")
 
     # ✅ Notify user
     await call.bot.send_message(
         user_id,
         "❌ Your payment was declined. Please contact support."
-    )
+            )
