@@ -1,7 +1,7 @@
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from config import OWNER_ID
-from database.db import set_upi
+from database.db import set_upi, update_wallet
 
 router = Router()
 
@@ -9,7 +9,7 @@ router = Router()
 # =========================
 # OWNER: CHANGE UPI
 # =========================
-@router.message(lambda m: m.text.startswith("/upi"))
+@router.message(lambda m: m.text and m.text.startswith("/upi"))
 async def change_upi(message: Message):
     if message.from_user.id != OWNER_ID:
         return
@@ -25,28 +25,47 @@ async def change_upi(message: Message):
 
 # =========================
 # OWNER: APPROVE PAYMENT
+# callback_data: approve_<user_id>_<amount>
 # =========================
 @router.callback_query(lambda c: c.data.startswith("approve_"))
 async def approve_payment(call: CallbackQuery):
-    user_id = int(call.data.split("_")[1])
+    if call.from_user.id != OWNER_ID:
+        await call.answer("Not authorized", show_alert=True)
+        return
 
-    await call.answer("Approved")
-    await call.message.edit_caption("✅ Payment Approved")
+    _, user_id, amount = call.data.split("_")
+    user_id = int(user_id)
+    amount = int(amount)
+
+    # ✅ update wallet
+    update_wallet(user_id, amount)
+
+    await call.answer("Payment approved")
+    await call.message.edit_caption(
+        f"✅ Payment Approved\n💰 Amount: {amount}"
+    )
 
     await call.bot.send_message(
         user_id,
-        "✅ Your payment has been approved 🎉"
+        f"✅ Your payment has been approved 🎉\n"
+        f"💰 {amount} coins added to your wallet"
     )
 
 
 # =========================
 # OWNER: DECLINE PAYMENT
+# callback_data: decline_<user_id>_<amount>
 # =========================
 @router.callback_query(lambda c: c.data.startswith("decline_"))
 async def decline_payment(call: CallbackQuery):
-    user_id = int(call.data.split("_")[1])
+    if call.from_user.id != OWNER_ID:
+        await call.answer("Not authorized", show_alert=True)
+        return
 
-    await call.answer("Declined")
+    _, user_id, amount = call.data.split("_")
+    user_id = int(user_id)
+
+    await call.answer("Payment declined")
     await call.message.edit_caption("❌ Payment Declined")
 
     await call.bot.send_message(
