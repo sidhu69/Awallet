@@ -61,7 +61,7 @@ async def help_handler(call: types.CallbackQuery):
         "• Bot will hold your first 300.\n"
         "• Do not send edited screenshots\n\n"
         "🆘 <b>Need Support?</b>\n"
-        "• Contact admin @Awalletsupportbot if payment is approved late\n"
+        "• Contact admin @Theawalletsupportbot if payment is approved late\n"
         "• Include Transaction ID / Screenshot\n\n"
         "📌 <b>Tip:</b>\n"
         "Invite more users to earn passive coins 💸\n\n"
