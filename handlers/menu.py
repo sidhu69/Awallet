@@ -1,7 +1,9 @@
 from aiogram import Router, types
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from keyboards.main_menu import main_menu_keyboard
 from database.db import get_wallet
+from states.user import UserForm
 
 router = Router()
 
@@ -53,4 +55,17 @@ async def help_handler(call: types.CallbackQuery):
         "You will not receive your withdrawal if your amount is below 300."
     )
     await call.message.edit_text(help_text)
+    await call.answer()
+
+# =========================
+# ACCOUNT SETTINGS HANDLER
+# =========================
+@router.callback_query(lambda c: c.data == "account_settings")
+async def account_settings_handler(call: types.CallbackQuery, state: FSMContext):
+    await call.message.answer(
+        "⚙️ <b>Account Settings</b>\n\n"
+        "Please enter your new UPI ID:\n"
+        "👉 कृपया अपना नया UPI ID दर्ज करें"
+    )
+    await state.set_state(UserForm.upi)
     await call.answer()
