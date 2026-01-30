@@ -21,7 +21,7 @@ async def buy_orders_start(call: CallbackQuery, state: FSMContext):
     await call.answer()
 
     await call.message.answer(
-        "🛒 Enter order amount (1 – 30000)\n\n"
+        "🛒 Enter order amount (350 – 30000)\n\n"
         "👉 Please write amount you want to buy",
         reply_markup=cancel_order_kb()
     )
