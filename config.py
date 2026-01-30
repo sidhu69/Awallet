@@ -1,4 +1,4 @@
-BOT_TOKEN = "8293897408:AAH2yfWvwagpTmdU1EqvKf_l0qEY53ACVvI"
+BOT_TOKEN = "8471574197:AAHpzznbJ_4bCgzeJD4AjFTr8iJF8X0JC7A"
 
 CHANNEL_ID = "@theawalletchannel"  
 # example: "@my_channel"
