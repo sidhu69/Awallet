@@ -1,7 +1,7 @@
 from aiogram import Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from keyboards.main_menu import main_menu_keyboard
+from keyboards.main_menu import main_menu_keyboard, back_button
 from database.db import get_wallet
 from states.user import UserForm
 
@@ -21,6 +21,20 @@ async def show_main_menu(message: types.Message):
         "👇 <b>Select an option below:</b>",
         reply_markup=main_menu_keyboard()
     )
+
+@router.callback_query(lambda c: c.data == "back_to_menu")
+async def back_to_menu_handler(call: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    wallet = get_wallet(call.from_user.id)
+    await call.message.edit_text(
+        f"👋 <b>Hey there! Welcome to Awallet 💟</b>\n\n"
+        "Awallet is always here to help you grow your income.\n"
+        f"Your wallet is: <b>{wallet}</b> coins\n"
+        "Buy your orders to earn more 💰\n\n"
+        "👇 <b>Select an option below:</b>",
+        reply_markup=main_menu_keyboard()
+    )
+    await call.answer()
 
 # =========================
 # HELP HANDLER
@@ -54,7 +68,7 @@ async def help_handler(call: types.CallbackQuery):
         "<b>Important note:</b>\n\n"
         "You will not receive your withdrawal if your amount is below 300."
     )
-    await call.message.edit_text(help_text)
+    await call.message.edit_text(help_text, reply_markup=back_button())
     await call.answer()
 
 # =========================
@@ -65,7 +79,8 @@ async def account_settings_handler(call: types.CallbackQuery, state: FSMContext)
     await call.message.answer(
         "⚙️ <b>Account Settings</b>\n\n"
         "Please enter your new UPI ID:\n"
-        "👉 कृपया अपना नया UPI ID दर्ज करें"
+        "👉 कृपया अपना नया UPI ID दर्ज करें",
+        reply_markup=back_button()
     )
     await state.set_state(UserForm.upi)
     await call.answer()
