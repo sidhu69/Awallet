@@ -13,3 +13,13 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="⚙️ Account Settings", callback_data="account_settings")]
         ]
     )
+
+def back_button() -> InlineKeyboardMarkup:
+    """
+    Returns a keyboard with a single 'Back to Menu' button.
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Back to Menu", callback_data="back_to_menu")]
+        ]
+    )
