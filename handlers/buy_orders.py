@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 
 from states.order import BuyOrder
 from keyboards.buy_orders import cancel_order_kb
+from keyboards.main_menu import back_button
 from config import OWNER_ID
 from database.db import get_upi
 
@@ -34,17 +35,17 @@ async def buy_orders_start(call: CallbackQuery, state: FSMContext):
 async def receive_amount(message: Message, state: FSMContext):
     # 🔒 CRITICAL FIX
     if not message.text:
-        await message.answer("❌ Please send numbers only")
+        await message.answer("❌ Please send numbers only", reply_markup=back_button())
         return
 
     if not message.text.isdigit():
-        await message.answer("❌ Enter valid number")
+        await message.answer("❌ Enter valid number", reply_markup=back_button())
         return
 
     amount = int(message.text)
 
     if amount <= 0 or amount > 30000:
-        await message.answer("❌ Amount must be between 1 and 30000")
+        await message.answer("❌ Amount must be between 1 and 30000", reply_markup=back_button())
         return
 
     await state.update_data(amount=amount)
@@ -57,7 +58,8 @@ async def receive_amount(message: Message, state: FSMContext):
         f"💳 <b>Payment Details</b>\n\n"
         f"🔢 Amount: <b>{amount}</b>\n"
         f"🏦 UPI: <b>{get_upi()}</b>\n\n"
-        "📸 After payment, send screenshot here"
+        "📸 After payment, send screenshot here",
+        reply_markup=back_button()
     )
 
     await state.set_state(BuyOrder.screenshot)
@@ -69,7 +71,7 @@ async def receive_amount(message: Message, state: FSMContext):
 @router.message(BuyOrder.screenshot)
 async def receive_screenshot(message: Message, state: FSMContext):
     if not message.photo:
-        await message.answer("❌ Please send payment screenshot only")
+        await message.answer("❌ Please send payment screenshot only", reply_markup=back_button())
         return
 
     data = await state.get_data()
@@ -91,4 +93,5 @@ async def receive_screenshot(message: Message, state: FSMContext):
         )
     )
 
+    await message.answer("✅ Request sent to admin!", reply_markup=back_button())
     await state.clear()
