@@ -1,6 +1,7 @@
 from aiogram import Router, types
 from database.db import get_wallet, get_referrals
 from config import BOT_TOKEN
+from keyboards.main_menu import back_button
 
 router = Router()
 
@@ -32,7 +33,7 @@ async def referral_stats_callback(call: types.CallbackQuery):
             ref_user_id, ref_wallet = ref
             text += f"- User ID <code>{ref_user_id}</code> (Balance: {ref_wallet})\n"
 
-    await call.message.edit_text(text)
+    await call.message.edit_text(text, reply_markup=back_button())
     await call.answer()
 
 
@@ -58,4 +59,4 @@ async def referral_stats_message(message: types.Message):
             ref_user_id, ref_wallet = ref
             text += f"- User ID <code>{ref_user_id}</code> (Balance: {ref_wallet})\n"
 
-    await message.answer(text)
+    await message.answer(text, reply_markup=back_button())
