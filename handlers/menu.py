@@ -1,5 +1,5 @@
 from aiogram import Router, types
-from aiogram.filters import Command
+from aiogram.filters import Command, ContentTypeFilter
 from aiogram.fsm.context import FSMContext
 
 from states.user import UserForm
@@ -47,7 +47,7 @@ async def subscribe_handler(call: types.CallbackQuery, state: FSMContext):
 # =========================
 # RECEIVE PAYMENT SCREENSHOT
 # =========================
-@router.message(UserForm.screenshot, content_types=['photo', 'document'])
+@router.message(UserForm.screenshot, ContentTypeFilter(content_types=['photo', 'document']))
 async def receive_screenshot(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
 
@@ -55,7 +55,8 @@ async def receive_screenshot(message: types.Message, state: FSMContext):
     await message.forward(chat_id=OWNER_ID)
 
     await message.answer(
-        "✅ Screenshot received. Admin will confirm your payment soon."
+        "✅ Screenshot received. Admin will confirm your payment soon.\n"
+        "⌛ Once approved, you can post your video."
     )
     await state.clear()
 
@@ -78,7 +79,7 @@ async def post_video_handler(call: types.CallbackQuery, state: FSMContext):
 # =========================
 # RECEIVE VIDEO
 # =========================
-@router.message(UserForm.video, content_types=['video'])
+@router.message(UserForm.video, ContentTypeFilter(content_types=['video']))
 async def receive_video(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     file_id = message.video.file_id
