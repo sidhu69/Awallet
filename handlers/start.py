@@ -7,10 +7,10 @@ from states.user import UserForm
 from utils.check_join import is_user_joined
 from keyboards.force_join import join_channel_keyboard
 from keyboards.main_menu import main_menu_keyboard
-from database.db import get_user, create_user
+from utils.send_instructions import send_voice_instructions
+from database.db import get_user, create_user, get_wallet
 
 router = Router()
-
 
 # =========================
 # /start → CHECK JOIN
@@ -18,28 +18,68 @@ router = Router()
 @router.message(CommandStart())
 async def start_handler(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
+    user = get_user(user_id)
 
     joined = await is_user_joined(message.bot, user_id)
     if not joined:
         await message.answer(
-            "🚫 To use this bot, please join our channel first.",
+            "🚫 To use this bot, please join our channel first 💟.",
             reply_markup=join_channel_keyboard()
         )
         return
 
-    user = get_user(user_id)
-
     if user:
+        wallet = get_wallet(user_id)
         await message.answer(
-            "👋 Welcome back!\n\n"
+            f"👋 Welcome back!\n"
+            f"Your wallet balance is: <b>{wallet}</b> coins\n\n"
             "👇 Select an option below:",
             reply_markup=main_menu_keyboard()
         )
         return
 
+    # New user who has joined
     await message.answer(
-        "✅ Access granted!\n\n"
-        "📝 Please enter your name:"
+        "✅ Access granted! Click <b>Confirm</b> below to continue 👇",
+        reply_markup=join_channel_keyboard()
+    )
+
+# =========================
+# CONFIRM BUTTON → ASK NAME
+# =========================
+@router.callback_query(lambda c: c.data == "confirm_join")
+async def confirm_join_handler(call: types.CallbackQuery, state: FSMContext):
+    user_id = call.from_user.id
+
+    joined = await is_user_joined(call.bot, user_id)
+    if not joined:
+        await call.answer(
+            "❌ You haven't joined the channel yet 😒.",
+            show_alert=True
+        )
+        return
+
+    await call.answer()
+
+    if get_user(user_id):
+        wallet = get_wallet(user_id)
+        await call.message.edit_text("✅ Welcome back!")
+        await call.message.answer(
+            f"Your wallet balance is: <b>{wallet}</b> coins",
+            reply_markup=main_menu_keyboard()
+        )
+        return
+
+    await call.message.edit_text("✅ Access granted! Welcome.")
+
+    # 🎧 Send voice instructions
+    await send_voice_instructions(call.bot, user_id)
+
+    await asyncio.sleep(5)
+
+    await call.message.answer(
+        "📝 Please enter your name\n"
+        "👉 कृपया अपना नाम बताएं"
     )
     await state.set_state(UserForm.name)
 
@@ -50,46 +90,57 @@ async def start_handler(message: types.Message, state: FSMContext):
 @router.message(UserForm.name)
 async def process_name(message: types.Message, state: FSMContext):
     name = message.text.strip()
-
     if len(name) < 2:
-        await message.answer("❌ Please enter a valid name.")
+        await message.answer("❌ Please enter a valid name")
         return
 
     await state.update_data(name=name)
+    await message.answer(f"✅ Thank you, <b>{name}</b>!")
 
+    await asyncio.sleep(1)
     await message.answer(
-        "💳 Please enter your UPI ID:"
+        "💳 Please enter your UPI ID to receive payments\n"
+        "👉 निकासी के लिए अपना UPI ID दर्ज करें"
     )
-
     await state.set_state(UserForm.upi)
 
 
 # =========================
-# RECEIVE UPI → COMPLETE REGISTRATION
+# RECEIVE UPI → MAIN MENU
 # =========================
 @router.message(UserForm.upi)
 async def process_upi(message: types.Message, state: FSMContext):
     upi = message.text.strip()
-
     if "@" not in upi or len(upi) < 5:
-        await message.answer("❌ Invalid UPI ID. Please try again.")
+        await message.answer(
+            "❌ Invalid UPI ID\n"
+            "👉 कृपया सही UPI ID दर्ज करें"
+        )
         return
 
     data = await state.get_data()
     name = data.get("name")
     user_id = message.from_user.id
 
+    # Add new user to DB
     create_user(user_id, name, upi)
 
+    # ✅ Registration complete
     await message.answer(
-        f"✅ Registration Complete!\n\n"
+        f"✅ Registration Complete 🎉\n\n"
         f"👤 Name: <b>{name}</b>\n"
         f"💳 UPI: <b>{upi}</b>"
     )
 
     await state.clear()
 
+    # 🏠 Show main menu with wallet
+    wallet = get_wallet(user_id)
     await message.answer(
-        "👇 Choose an option below:",
+        f"👋 <b>Hey there! Welcome to Awallet</b> 💟\n\n"
+        "Awallet is here to help you earn income.\n"
+        f"Your wallet is: <b>{wallet}</b> coins\n"
+        "Buy your orders to start earning 💰\n\n"
+        "👇 <b>Select an option below:</b>",
         reply_markup=main_menu_keyboard()
     )
