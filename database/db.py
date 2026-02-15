@@ -1,199 +1,47 @@
 import sqlite3
-from datetime import datetime
 
-DB_NAME = "awallet.db"
+class Database:
+    def __init__(self, db_name=':memory:'):
+        self.conn = sqlite3.connect(db_name)
+        self.create_tables()
 
+    def create_tables(self):
+        # Create users table
+        self.conn.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, is_subscribed BOOLEAN)''')
+        # Create videos table
+        self.conn.execute('''CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY, title TEXT, url TEXT, status TEXT)''')
+        # Create subscription_payments table
+        self.conn.execute('''CREATE TABLE IF NOT EXISTS subscription_payments (id INTEGER PRIMARY KEY, user_id INTEGER, amount REAL, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))''')
+        self.conn.commit()
 
-# =========================
-# INIT DATABASE
-# =========================
-def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
+    def is_user_subscribed(self, user_id):
+        cursor = self.conn.execute('''SELECT is_subscribed FROM users WHERE id = ?''', (user_id,))
+        return cursor.fetchone()[0] if cursor.fetchone() else None
 
-    # Users table with wallet and referrer
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            telegram_id INTEGER PRIMARY KEY,
-            name TEXT,
-            upi TEXT,
-            wallet INTEGER DEFAULT 0,
-            created_at TEXT,
-            referrer_id INTEGER
-        )
-    """)
+    def subscribe_user(self, user_id):
+        self.conn.execute('''UPDATE users SET is_subscribed = 1 WHERE id = ?''', (user_id,))
+        self.conn.commit()
 
-    # Settings table (for UPI etc.)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
+    def save_video(self, title, url):
+        self.conn.execute('''INSERT INTO videos (title, url, status) VALUES (?, ?, ?)''', (title, url, 'pending'))
+        self.conn.commit()
 
-    # Default UPI (if not exists)
-    cursor.execute("""
-        INSERT OR IGNORE INTO settings (key, value)
-        VALUES ('upi', 'default@upi')
-    """)
+    def get_all_videos(self):
+        cursor = self.conn.execute('''SELECT * FROM videos''')
+        return cursor.fetchall()
 
-    conn.commit()
-    conn.close()
+    def approve_video(self, video_id):
+        self.conn.execute('''UPDATE videos SET status = 'approved' WHERE id = ?''', (video_id,))
+        self.conn.commit()
 
+    def get_pending_videos(self):
+        cursor = self.conn.execute('''SELECT * FROM videos WHERE status = 'pending' ''')
+        return cursor.fetchall()
 
-# =========================
-# USER FUNCTIONS
-# =========================
-def create_user(telegram_id: int, name: str, upi: str, referrer_id: int = None):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
+    def update_multiple_balances(self, user_ids, amount):
+        self.conn.executemany('''UPDATE users SET balance = balance + ? WHERE id = ?''', [(amount, user_id) for user_id in user_ids])
+        self.conn.commit()  
 
-    # Preserve existing wallet if user already exists
-    cursor.execute("""
-        INSERT OR REPLACE INTO users
-        (telegram_id, name, upi, wallet, created_at, referrer_id)
-        VALUES (?, ?, ?, COALESCE((SELECT wallet FROM users WHERE telegram_id = ?), 0), ?, ?)
-    """, (telegram_id, name, upi, telegram_id, datetime.now().isoformat(), referrer_id))
-
-    conn.commit()
-    conn.close()
-
-
-def get_user(telegram_id: int):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT * FROM users WHERE telegram_id = ?",
-        (telegram_id,)
-    )
-
-    user = cursor.fetchone()
-    conn.close()
-    return user
-
-
-# =========================
-# WALLET FUNCTIONS
-# =========================
-def get_wallet(telegram_id: int):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT wallet FROM users WHERE telegram_id = ?", (telegram_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return row[0] if row else 0
-
-
-def update_wallet(telegram_id: int, amount: float):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "UPDATE users SET wallet = wallet + ? WHERE telegram_id = ?",
-        (amount, telegram_id)
-    )
-
-    success = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
-    return success
-
-
-# =========================
-# UPI SETTINGS
-# =========================
-def set_upi(new_upi: str):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        INSERT OR REPLACE INTO settings (key, value)
-        VALUES ('upi', ?)
-    """, (new_upi,))
-
-    conn.commit()
-    conn.close()
-
-
-def get_upi():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT value FROM settings WHERE key = 'upi'"
-    )
-
-    row = cursor.fetchone()
-    conn.close()
-
-    return row[0] if row else None
-
-
-# =========================
-# REFERRAL FUNCTIONS
-# =========================
-def save_referral(user_id: int, referrer_id: int):
-    """
-    Save referrer for a new user.
-    """
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "UPDATE users SET referrer_id = ? WHERE telegram_id = ?",
-        (referrer_id, user_id)
-    )
-
-    conn.commit()
-    conn.close()
-
-
-def get_referrer(user_id: int):
-    """
-    Returns the referrer_id of a user.
-    """
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT referrer_id FROM users WHERE telegram_id = ?",
-        (user_id,)
-    )
-
-    row = cursor.fetchone()
-    conn.close()
-    return row[0] if row else None
-
-
-def add_referral_bonus(user_id: int, deposit_amount: float, percentage: float = 0.4):
-    """
-    Add referral bonus to the referrer wallet based on user's deposit.
-    Default: 0.4% of deposit.
-    """
-    referrer_id = get_referrer(user_id)
-    if not referrer_id:
-        return  # No referrer
-
-    bonus = deposit_amount * (percentage / 100)
-    update_wallet(referrer_id, bonus)
-    return bonus
-
-
-def get_referrals(user_id: int):
-    """
-    Returns a list of users referred by user_id with their wallet balances.
-    [(ref_user_id, wallet), ...]
-    """
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT telegram_id, wallet FROM users WHERE referrer_id = ?",
-        (user_id,)
-    )
-
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
+# Example of how to use this class
+db = Database()
+db.save_video('Example Video','http://example.com/video')  # Save an example video
