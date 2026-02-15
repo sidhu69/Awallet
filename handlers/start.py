@@ -4,28 +4,18 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 
 from states.user import UserForm
-from keyboards.main_menu import main_menu_keyboard, back_button
-from utils.send_instructions import send_voice_instructions
+from keyboards.main_menu import main_menu_keyboard
 from database.db import get_user, create_user, get_wallet
 
 router = Router()
 
 
 # =========================
-# /start → CHECK USER + REFERRAL
+# /start → CHECK USER
 # =========================
 @router.message(CommandStart())
 async def start_handler(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-
-    # Parse referral from start command (optional)
-    parts = message.text.split()
-    ref_id = None
-    if len(parts) > 1 and parts[1].isdigit():
-        ref_id = int(parts[1])
-        if ref_id == user_id:
-            ref_id = None
-
     user = get_user(user_id)
 
     if user:
@@ -34,7 +24,7 @@ async def start_handler(message: types.Message, state: FSMContext):
             f"👋 Welcome back!\n"
             f"Your wallet balance is: <b>{wallet}</b> coins\n\n"
             "👇 Select an option below:",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(user_id)
         )
         return
 
@@ -45,8 +35,6 @@ async def start_handler(message: types.Message, state: FSMContext):
         "👉 कृपया अपना नाम बताएं"
     )
     await state.set_state(UserForm.name)
-    if ref_id:
-        await state.update_data(referrer_id=ref_id)
 
 
 # =========================
@@ -60,7 +48,9 @@ async def process_name(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(name=name)
-    await message.answer(f"✅ Thanks, <b>{name}</b>!\n\nNow enter your UPI ID to receive withdrawals:")
+    await message.answer(
+        f"✅ Thanks, <b>{name}</b>!\n\nNow enter your UPI ID to receive withdrawals:"
+    )
     await state.set_state(UserForm.upi)
 
 
@@ -76,7 +66,6 @@ async def process_upi(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     name = data.get("name")
-    referrer_id = data.get("referrer_id")
     user_id = message.from_user.id
 
     # Add new user
