@@ -1,26 +1,27 @@
 import sqlite3
 
-
 # =========================
 # DATABASE CLASS
 # =========================
 class Database:
-    def __init__(self, db_name="awallet.db"):
+    def __init__(self, db_name='awallet.db'):
         self.conn = sqlite3.connect(db_name, check_same_thread=False)
         self.create_tables()
 
     def create_tables(self):
+        # Users table
         self.conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY,
             name TEXT,
             upi TEXT,
-            balance INTEGER DEFAULT 0,
-            is_subscribed INTEGER DEFAULT 0,
-            referrer_id INTEGER DEFAULT NULL
+            balance REAL DEFAULT 0,
+            is_subscribed BOOLEAN DEFAULT 0,
+            referrer_id INTEGER
         )
         """)
 
+        # Videos table
         self.conn.execute("""
         CREATE TABLE IF NOT EXISTS videos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,11 +35,8 @@ class Database:
 
         self.conn.commit()
 
-    # =========================
-    # USER METHODS
-    # =========================
-
-    def create_user(self, user_id, name, upi=None, referrer_id=None):
+    # ---------- USER METHODS ----------
+    def create_user(self, user_id, name, upi, referrer_id=None):
         self.conn.execute("""
         INSERT OR IGNORE INTO users (id, name, upi, referrer_id)
         VALUES (?, ?, ?, ?)
@@ -69,7 +67,13 @@ class Database:
         SELECT balance FROM users WHERE id = ?
         """, (user_id,))
         row = cursor.fetchone()
-        return row[0] if row else 0
+        return row[0] if row else None
+
+    def get_user(self, user_id):
+        cursor = self.conn.execute("""
+        SELECT * FROM users WHERE id = ?
+        """, (user_id,))
+        return cursor.fetchone()
 
     def get_referrer(self, user_id):
         cursor = self.conn.execute("""
@@ -78,16 +82,7 @@ class Database:
         row = cursor.fetchone()
         return row[0] if row and row[0] else None
 
-    def get_user(self, user_id):
-        cursor = self.conn.execute("""
-        SELECT * FROM users WHERE id = ?
-        """, (user_id,))
-        return cursor.fetchone()
-
-    # =========================
-    # VIDEO METHODS
-    # =========================
-
+    # ---------- VIDEO METHODS ----------
     def save_video(self, user_id, file_id):
         self.conn.execute("""
         INSERT INTO videos (user_id, file_id)
@@ -107,12 +102,6 @@ class Database:
         """, (video_id,))
         self.conn.commit()
 
-    def reject_video(self, video_id):
-        self.conn.execute("""
-        UPDATE videos SET status = 'rejected' WHERE id = ?
-        """, (video_id,))
-        self.conn.commit()
-
 
 # =========================
 # GLOBAL INSTANCE
@@ -123,8 +112,16 @@ db = Database()
 # =========================
 # EXPORTED FUNCTIONS
 # =========================
+def init_db():
+    """
+    Initializes the database.
+    (Tables are auto-created by Database constructor)
+    """
+    global db
+    pass
 
-def create_user(user_id, name, upi=None, referrer_id=None):
+
+def create_user(user_id, name, upi, referrer_id=None):
     db.create_user(user_id, name, upi, referrer_id)
 
 
@@ -144,12 +141,12 @@ def get_balance(user_id):
     return db.get_balance(user_id)
 
 
-def get_referrer(user_id):
-    return db.get_referrer(user_id)
-
-
 def get_user(user_id):
     return db.get_user(user_id)
+
+
+def get_referrer(user_id):
+    return db.get_referrer(user_id)
 
 
 def save_video(user_id, file_id):
@@ -162,7 +159,3 @@ def get_pending_videos():
 
 def approve_video(video_id):
     db.approve_video(video_id)
-
-
-def reject_video(video_id):
-    db.reject_video(video_id)
