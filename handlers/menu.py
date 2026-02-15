@@ -4,8 +4,8 @@ from aiogram.fsm.context import FSMContext
 
 from states.user import UserForm
 from database.db import get_wallet, is_user_subscribed, subscribe_user, save_video
+from keyboards.main_menu import main_menu_keyboard
 
-from keyboards.main_menu import main_menu_keyboard, back_button
 from config import OWNER_ID
 
 router = Router()
@@ -16,12 +16,14 @@ router = Router()
 # =========================
 @router.message(Command("menu"))
 async def show_main_menu(message: types.Message):
-    wallet = get_wallet(message.from_user.id)
+    user_id = message.from_user.id
+    wallet = get_wallet(user_id)
+
     await message.answer(
         f"👋 <b>Hey there! Welcome to Awallet 💟</b>\n\n"
         f"Your wallet: <b>{wallet}</b> coins\n"
         "👇 Select an option below:",
-        reply_markup=main_menu_keyboard()
+        reply_markup=main_menu_keyboard(user_id)
     )
 
 
@@ -31,12 +33,13 @@ async def show_main_menu(message: types.Message):
 @router.callback_query(lambda c: c.data == "subscribe")
 async def subscribe_handler(call: types.CallbackQuery, state: FSMContext):
     user_id = call.from_user.id
+
     if is_user_subscribed(user_id):
         await call.answer("✅ You are already subscribed!", show_alert=True)
         return
 
     await call.message.edit_text(
-        "💳 To post a video, first pay the subscription amount.\n"
+        "💳 To post a video, first pay the subscription amount.\n\n"
         "1️⃣ Send payment.\n"
         "2️⃣ Send a screenshot of the payment."
     )
@@ -55,8 +58,7 @@ async def receive_screenshot(message: types.Message, state: FSMContext):
     await message.forward(chat_id=OWNER_ID)
 
     await message.answer(
-        "✅ Screenshot received. Admin will confirm your payment soon.\n"
-        "Once approved, you can post your video using /menu → Post Video"
+        "✅ Screenshot received. Admin will confirm your payment soon."
     )
     await state.clear()
 
@@ -67,6 +69,7 @@ async def receive_screenshot(message: types.Message, state: FSMContext):
 @router.callback_query(lambda c: c.data == "post_video")
 async def post_video_handler(call: types.CallbackQuery, state: FSMContext):
     user_id = call.from_user.id
+
     if not is_user_subscribed(user_id):
         await call.answer("❌ You must subscribe first!", show_alert=True)
         return
