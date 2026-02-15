@@ -1,87 +1,91 @@
-from aiogram import Router, types, F
+from aiogram import Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
+from states.user import UserForm
+from database.db import get_wallet, is_user_subscribed, subscribe_user, save_video
+
 from keyboards.main_menu import main_menu_keyboard, back_button
-from database.db import get_user
+from config import OWNER_ID
 
 router = Router()
 
 
 # =========================
-# /menu → SHOW MAIN MENU
+# /menu → MAIN MENU
 # =========================
 @router.message(Command("menu"))
 async def show_main_menu(message: types.Message):
+    wallet = get_wallet(message.from_user.id)
+    await message.answer(
+        f"👋 <b>Hey there! Welcome to Awallet 💟</b>\n\n"
+        f"Your wallet: <b>{wallet}</b> coins\n"
+        "👇 Select an option below:",
+        reply_markup=main_menu_keyboard()
+    )
+
+
+# =========================
+# SUBSCRIBE BUTTON → PAYMENT FLOW
+# =========================
+@router.callback_query(lambda c: c.data == "subscribe")
+async def subscribe_handler(call: types.CallbackQuery, state: FSMContext):
+    user_id = call.from_user.id
+    if is_user_subscribed(user_id):
+        await call.answer("✅ You are already subscribed!", show_alert=True)
+        return
+
+    await call.message.edit_text(
+        "💳 To post a video, first pay the subscription amount.\n"
+        "1️⃣ Send payment.\n"
+        "2️⃣ Send a screenshot of the payment."
+    )
+    await state.set_state(UserForm.screenshot)
+    await call.answer()
+
+
+# =========================
+# RECEIVE PAYMENT SCREENSHOT
+# =========================
+@router.message(UserForm.screenshot, content_types=['photo', 'document'])
+async def receive_screenshot(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
 
+    # Forward screenshot to admin
+    await message.forward(chat_id=OWNER_ID)
+
     await message.answer(
-        "👋 Welcome to Awallet\n\n"
-        "👇 Select an option below:",
-        reply_markup=main_menu_keyboard(user_id)
+        "✅ Screenshot received. Admin will confirm your payment soon."
     )
-
-
-# =========================
-# BACK TO MENU
-# =========================
-@router.callback_query(F.data == "back_to_menu")
-async def back_to_menu_handler(call: types.CallbackQuery, state: FSMContext):
     await state.clear()
 
-    await call.message.edit_text(
-        "👋 Welcome back!\n\n"
-        "👇 Select an option below:",
-        reply_markup=main_menu_keyboard(call.from_user.id)
-    )
-    await call.answer()
-
 
 # =========================
-# PROFILE HANDLER
+# POST VIDEO BUTTON
 # =========================
-@router.callback_query(F.data == "profile")
-async def profile_handler(call: types.CallbackQuery):
-    user = get_user(call.from_user.id)
-
-    if not user:
-        await call.answer("User not found.", show_alert=True)
+@router.callback_query(lambda c: c.data == "post_video")
+async def post_video_handler(call: types.CallbackQuery, state: FSMContext):
+    user_id = call.from_user.id
+    if not is_user_subscribed(user_id):
+        await call.answer("❌ You must subscribe first!", show_alert=True)
         return
 
-    user_id, name, upi, balance, is_subscribed = user
-
-    status = "Active" if is_subscribed else "Not Subscribed"
-
-    await call.message.edit_text(
-        f"👤 <b>Your Profile</b>\n\n"
-        f"🆔 ID: <code>{user_id}</code>\n"
-        f"👤 Name: <b>{name}</b>\n"
-        f"💳 UPI: <b>{upi}</b>\n"
-        f"💰 Balance: ₹<b>{balance}</b>\n"
-        f"📌 Subscription: <b>{status}</b>",
-        reply_markup=back_button()
-    )
-
+    await call.message.edit_text("🎬 Send your video to post:")
+    await state.set_state(UserForm.video)
     await call.answer()
 
 
 # =========================
-# MY BALANCE
+# RECEIVE VIDEO
 # =========================
-@router.callback_query(F.data == "my_balance")
-async def balance_handler(call: types.CallbackQuery):
-    user = get_user(call.from_user.id)
+@router.message(UserForm.video, content_types=['video'])
+async def receive_video(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    file_id = message.video.file_id
 
-    if not user:
-        await call.answer("User not found.", show_alert=True)
-        return
+    save_video(user_id, file_id)
 
-    balance = user[3]
-
-    await call.message.edit_text(
-        f"💰 <b>Your Current Balance</b>\n\n"
-        f"₹ <b>{balance}</b>",
-        reply_markup=back_button()
+    await message.answer(
+        "✅ Video received! It will be approved by admin shortly."
     )
-
-    await call.answer()
+    await state.clear()
