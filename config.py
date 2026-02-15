@@ -4,4 +4,4 @@ CHANNEL_ID = "@theawalletchannel"
 # example: "@my_channel"
 OWNER_ID = 8032922682
 OWNER_UPI = "ansh@upi"
-INSTRUCTION_VOICE_MESSAGE_ID = 226
+INSTRUCTION_VOICE_MESSAGE_ID = 229
