@@ -1,97 +1,79 @@
-import random
-import asyncio
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 
-from states.order import BuyOrder
-from keyboards.buy_orders import cancel_order_kb
-from keyboards.main_menu import back_button
 from config import OWNER_ID
-from database.db import get_upi
+from database.db import (
+    subscribe_user,
+    is_user_subscribed,
+    save_video
+)
+from keyboards.main_menu import back_button
 
 router = Router()
 
+SUBSCRIPTION_AMOUNT = 50
+
 
 # =========================
-# STEP 1 → CLICK BUY ORDERS
+# CLICK SUBSCRIBE
 # =========================
-@router.callback_query(lambda c: c.data == "buy_orders")
-async def buy_orders_start(call: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data == "subscribe")
+async def subscribe_start(call: CallbackQuery):
     await call.answer()
 
     await call.message.answer(
-        "🛒 Enter order amount (350 – 30000)\n\n"
-        "👉 Please write amount you want to buy",
-        reply_markup=cancel_order_kb()
-    )
-    await state.set_state(BuyOrder.amount)
-
-
-# =========================
-# STEP 2 → RECEIVE AMOUNT
-# =========================
-@router.message(BuyOrder.amount)
-async def receive_amount(message: Message, state: FSMContext):
-    # 🔒 CRITICAL FIX
-    if not message.text:
-        await message.answer("❌ Please send numbers only", reply_markup=back_button())
-        return
-
-    if not message.text.isdigit():
-        await message.answer("❌ Enter valid number", reply_markup=back_button())
-        return
-
-    amount = int(message.text)
-
-    if amount <= 0 or amount > 30000:
-        await message.answer("❌ Amount must be between 1 and 30000", reply_markup=back_button())
-        return
-
-    await state.update_data(amount=amount)
-
-    await message.answer("⏳ Please wait, creating your order...")
-
-    await asyncio.sleep(random.randint(3, 6))
-
-    await message.answer(
-        f"💳 <b>Payment Details</b>\n\n"
-        f"🔢 Amount: <b>{amount}</b>\n"
-        f"🏦 UPI: <b>{get_upi()}</b>\n\n"
-        "📸 After payment, send screenshot here",
+        f"💳 <b>Subscription Required</b>\n\n"
+        f"Pay ₹{SUBSCRIPTION_AMOUNT} to activate your account.\n\n"
+        f"🏦 UPI: <b>ansh@upi</b>\n\n"
+        f"📝 Message while paying: <code>SUB_{call.from_user.id}</code>\n\n"
+        f"After payment, click Confirm Payment.",
         reply_markup=back_button()
     )
 
-    await state.set_state(BuyOrder.screenshot)
-
 
 # =========================
-# STEP 3 → RECEIVE SCREENSHOT
+# CONFIRM PAYMENT (Manual Approval)
 # =========================
-@router.message(BuyOrder.screenshot)
-async def receive_screenshot(message: Message, state: FSMContext):
-    if not message.photo:
-        await message.answer("❌ Please send payment screenshot only", reply_markup=back_button())
-        return
+@router.callback_query(F.data == "confirm_subscription")
+async def confirm_subscription(call: CallbackQuery):
+    await call.answer()
 
-    data = await state.get_data()
-    amount = data["amount"]
-
-    await message.answer("⏳ Please wait while we confirm your payment...")
-
-    await message.bot.send_photo(
-        chat_id=OWNER_ID,
-        photo=message.photo[-1].file_id,
-        caption=(
-            f"🧾 <b>New Payment Request</b>\n\n"
-            f"👤 User ID: <code>{message.from_user.id}</code>\n"
-            f"💰 Amount: <b>{amount}</b>"
-        ),
-        reply_markup=__import__("keyboards.admin").admin.approve_decline_kb(
-            message.from_user.id,
-            amount
-        )
+    await call.message.bot.send_message(
+        OWNER_ID,
+        f"🧾 <b>Subscription Request</b>\n\n"
+        f"User ID: <code>{call.from_user.id}</code>\n"
+        f"Approve using:\n"
+        f"/approve {call.from_user.id}"
     )
 
-    await message.answer("✅ Request sent to admin!", reply_markup=back_button())
-    await state.clear()
+    await call.message.answer(
+        "✅ Your request has been sent to admin.\n"
+        "You will be notified after approval."
+    )
+
+
+# =========================
+# VIDEO UPLOAD
+# =========================
+@router.message(F.video)
+async def receive_video(message: Message):
+    user_id = message.from_user.id
+
+    if not is_user_subscribed(user_id):
+        await message.answer("❌ You must subscribe first.")
+        return
+
+    file_id = message.video.file_id
+    save_video(user_id, file_id)
+
+    await message.bot.send_video(
+        OWNER_ID,
+        file_id,
+        caption=f"📥 New Video\nUser: {user_id}"
+    )
+
+    await message.answer(
+        "📤 Your video has been received.\n"
+        "You’ll be updated once it is posted."
+    )
