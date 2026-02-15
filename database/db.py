@@ -1,5 +1,8 @@
 import sqlite3
 
+# =========================
+# DATABASE CLASS
+# =========================
 class Database:
     def __init__(self, db_name='awallet.db'):
         self.conn = sqlite3.connect(db_name, check_same_thread=False)
@@ -44,6 +47,13 @@ class Database:
         """, (user_id,))
         self.conn.commit()
 
+    def is_user_subscribed(self, user_id):
+        cursor = self.conn.execute("""
+        SELECT is_subscribed FROM users WHERE id = ?
+        """, (user_id,))
+        row = cursor.fetchone()
+        return row[0] if row else 0
+
     def add_balance(self, user_id, amount):
         self.conn.execute("""
         UPDATE users SET balance = balance + ? WHERE id = ?
@@ -76,3 +86,49 @@ class Database:
         UPDATE videos SET status = 'approved' WHERE id = ?
         """, (video_id,))
         self.conn.commit()
+
+
+# =========================
+# GLOBAL INSTANCE
+# =========================
+db = Database()
+
+
+# =========================
+# EXPORTED FUNCTIONS
+# =========================
+def init_db():
+    # Tables auto-created in constructor
+    pass
+
+
+def create_user(user_id, name, upi):
+    db.create_user(user_id, name, upi)
+
+
+def subscribe_user(user_id):
+    db.subscribe_user(user_id)
+
+
+def is_user_subscribed(user_id):
+    return db.is_user_subscribed(user_id)
+
+
+def add_balance(user_id, amount):
+    db.add_balance(user_id, amount)
+
+
+def get_user(user_id):
+    return db.get_user(user_id)
+
+
+def save_video(user_id, file_id):
+    db.save_video(user_id, file_id)
+
+
+def get_pending_videos():
+    return db.get_pending_videos()
+
+
+def approve_video(video_id):
+    db.approve_video(video_id)
