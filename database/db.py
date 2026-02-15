@@ -1,47 +1,78 @@
 import sqlite3
 
 class Database:
-    def __init__(self, db_name=':memory:'):
-        self.conn = sqlite3.connect(db_name)
+    def __init__(self, db_name='awallet.db'):
+        self.conn = sqlite3.connect(db_name, check_same_thread=False)
         self.create_tables()
 
     def create_tables(self):
-        # Create users table
-        self.conn.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, is_subscribed BOOLEAN)''')
-        # Create videos table
-        self.conn.execute('''CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY, title TEXT, url TEXT, status TEXT)''')
-        # Create subscription_payments table
-        self.conn.execute('''CREATE TABLE IF NOT EXISTS subscription_payments (id INTEGER PRIMARY KEY, user_id INTEGER, amount REAL, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))''')
+        self.conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            upi TEXT,
+            balance INTEGER DEFAULT 0,
+            is_subscribed BOOLEAN DEFAULT 0
+        )
+        """)
+
+        self.conn.execute("""
+        CREATE TABLE IF NOT EXISTS videos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            file_id TEXT,
+            status TEXT DEFAULT 'pending',
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """)
+
         self.conn.commit()
 
-    def is_user_subscribed(self, user_id):
-        cursor = self.conn.execute('''SELECT is_subscribed FROM users WHERE id = ?''', (user_id,))
-        return cursor.fetchone()[0] if cursor.fetchone() else None
+    # ---------- USER METHODS ----------
+
+    def create_user(self, user_id, name, upi):
+        self.conn.execute("""
+        INSERT OR IGNORE INTO users (id, name, upi)
+        VALUES (?, ?, ?)
+        """, (user_id, name, upi))
+        self.conn.commit()
 
     def subscribe_user(self, user_id):
-        self.conn.execute('''UPDATE users SET is_subscribed = 1 WHERE id = ?''', (user_id,))
+        self.conn.execute("""
+        UPDATE users SET is_subscribed = 1 WHERE id = ?
+        """, (user_id,))
         self.conn.commit()
 
-    def save_video(self, title, url):
-        self.conn.execute('''INSERT INTO videos (title, url, status) VALUES (?, ?, ?)''', (title, url, 'pending'))
+    def add_balance(self, user_id, amount):
+        self.conn.execute("""
+        UPDATE users SET balance = balance + ? WHERE id = ?
+        """, (amount, user_id))
         self.conn.commit()
 
-    def get_all_videos(self):
-        cursor = self.conn.execute('''SELECT * FROM videos''')
-        return cursor.fetchall()
+    def get_user(self, user_id):
+        cursor = self.conn.execute("""
+        SELECT * FROM users WHERE id = ?
+        """, (user_id,))
+        return cursor.fetchone()
 
-    def approve_video(self, video_id):
-        self.conn.execute('''UPDATE videos SET status = 'approved' WHERE id = ?''', (video_id,))
+    # ---------- VIDEO METHODS ----------
+
+    def save_video(self, user_id, file_id):
+        self.conn.execute("""
+        INSERT INTO videos (user_id, file_id)
+        VALUES (?, ?)
+        """, (user_id, file_id))
         self.conn.commit()
 
     def get_pending_videos(self):
-        cursor = self.conn.execute('''SELECT * FROM videos WHERE status = 'pending' ''')
+        cursor = self.conn.execute("""
+        SELECT * FROM videos WHERE status = 'pending'
+        """)
         return cursor.fetchall()
 
-    def update_multiple_balances(self, user_ids, amount):
-        self.conn.executemany('''UPDATE users SET balance = balance + ? WHERE id = ?''', [(amount, user_id) for user_id in user_ids])
-        self.conn.commit()  
-
-# Example of how to use this class
-db = Database()
-db.save_video('Example Video','http://example.com/video')  # Save an example video
+    def approve_video(self, video_id):
+        self.conn.execute("""
+        UPDATE videos SET status = 'approved' WHERE id = ?
+        """, (video_id,))
+        self.conn.commit()
