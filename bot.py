@@ -1,161 +1,51 @@
-import sqlite3
+import asyncio
+from aiogram import Bot, Dispatcher
+from aiogram.enums import ParseMode
+from aiogram.client.default import DefaultBotProperties
+from aiogram.fsm.storage.memory import MemoryStorage
 
-# =========================
-# DATABASE CLASS
-# =========================
-class Database:
-    def __init__(self, db_name='awallet.db'):
-        self.conn = sqlite3.connect(db_name, check_same_thread=False)
-        self.create_tables()
+from config import BOT_TOKEN
+from database.db import init_db
 
-    def create_tables(self):
-        # Users table
-        self.conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY,
-            name TEXT,
-            upi TEXT,
-            balance REAL DEFAULT 0,
-            is_subscribed BOOLEAN DEFAULT 0,
-            referrer_id INTEGER
-        )
-        """)
-
-        # Videos table
-        self.conn.execute("""
-        CREATE TABLE IF NOT EXISTS videos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            file_id TEXT,
-            status TEXT DEFAULT 'pending',
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(id)
-        )
-        """)
-
-        self.conn.commit()
-
-    # ---------- USER METHODS ----------
-    def create_user(self, user_id, name, upi, referrer_id=None):
-        self.conn.execute("""
-        INSERT OR IGNORE INTO users (id, name, upi, referrer_id)
-        VALUES (?, ?, ?, ?)
-        """, (user_id, name, upi, referrer_id))
-        self.conn.commit()
-
-    def subscribe_user(self, user_id):
-        self.conn.execute("""
-        UPDATE users SET is_subscribed = 1 WHERE id = ?
-        """, (user_id,))
-        self.conn.commit()
-
-    def is_user_subscribed(self, user_id):
-        cursor = self.conn.execute("""
-        SELECT is_subscribed FROM users WHERE id = ?
-        """, (user_id,))
-        row = cursor.fetchone()
-        return row[0] if row else 0
-
-    def add_balance(self, user_id, amount):
-        self.conn.execute("""
-        UPDATE users SET balance = balance + ? WHERE id = ?
-        """, (amount, user_id))
-        self.conn.commit()
-
-    def get_balance(self, user_id):
-        cursor = self.conn.execute("""
-        SELECT balance FROM users WHERE id = ?
-        """, (user_id,))
-        row = cursor.fetchone()
-        return row[0] if row else None
-
-    def get_user(self, user_id):
-        cursor = self.conn.execute("""
-        SELECT * FROM users WHERE id = ?
-        """, (user_id,))
-        return cursor.fetchone()
-
-    def get_referrer(self, user_id):
-        cursor = self.conn.execute("""
-        SELECT referrer_id FROM users WHERE id = ?
-        """, (user_id,))
-        row = cursor.fetchone()
-        return row[0] if row and row[0] else None
-
-    # ---------- VIDEO METHODS ----------
-    def save_video(self, user_id, file_id):
-        self.conn.execute("""
-        INSERT INTO videos (user_id, file_id)
-        VALUES (?, ?)
-        """, (user_id, file_id))
-        self.conn.commit()
-
-    def get_pending_videos(self):
-        cursor = self.conn.execute("""
-        SELECT * FROM videos WHERE status = 'pending'
-        """)
-        return cursor.fetchall()
-
-    def approve_video(self, video_id):
-        self.conn.execute("""
-        UPDATE videos SET status = 'approved' WHERE id = ?
-        """, (video_id,))
-        self.conn.commit()
+# Routers
+from handlers.start import router as start_router
+from handlers.menu import router as menu_router
+from handlers.buy_orders import router as buy_orders_router
+from handlers.admin import router as admin_router
+from handlers.referral import router as referral_router
 
 
 # =========================
-# GLOBAL INSTANCE
+# MAIN FUNCTION
 # =========================
-db = Database()
+async def main():
+    # ✅ Initialize database FIRST
+    init_db()
+
+    # 🤖 Create bot
+    bot = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
+
+    # 🧠 FSM storage
+    storage = MemoryStorage()
+    dp = Dispatcher(storage=storage)
+
+    # 📌 Register routers (ORDER MATTERS)
+    dp.include_router(start_router)
+    dp.include_router(menu_router)
+    dp.include_router(buy_orders_router)
+    dp.include_router(admin_router)
+    dp.include_router(referral_router)
+
+    print("🚀 Bot started and polling...")
+    # 🚀 Start polling
+    await dp.start_polling(bot)
 
 
 # =========================
-# EXPORTED FUNCTIONS
+# RUN BOT
 # =========================
-def init_db():
-    """
-    Initializes the database.
-    (Tables are auto-created by Database constructor)
-    """
-    global db
-    pass
-
-
-def create_user(user_id, name, upi, referrer_id=None):
-    db.create_user(user_id, name, upi, referrer_id)
-
-
-def subscribe_user(user_id):
-    db.subscribe_user(user_id)
-
-
-def is_user_subscribed(user_id):
-    return db.is_user_subscribed(user_id)
-
-
-def add_balance(user_id, amount):
-    db.add_balance(user_id, amount)
-
-
-def get_balance(user_id):
-    return db.get_balance(user_id)
-
-
-def get_user(user_id):
-    return db.get_user(user_id)
-
-
-def get_referrer(user_id):
-    return db.get_referrer(user_id)
-
-
-def save_video(user_id, file_id):
-    db.save_video(user_id, file_id)
-
-
-def get_pending_videos():
-    return db.get_pending_videos()
-
-
-def approve_video(video_id):
-    db.approve_video(video_id)
+if __name__ == "__main__":
+    asyncio.run(main())
