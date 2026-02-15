@@ -1,7 +1,13 @@
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from config import OWNER_ID
-from database.db import set_upi, update_wallet, get_referrer, get_wallet
+from keyboards.main_menu import main_menu_keyboard
+from database.db import (
+    set_upi,
+    set_user_subscribed,
+    update_wallet,
+    get_referrer,
+)
 
 router = Router()
 
@@ -25,91 +31,91 @@ async def change_upi(message: Message):
 
 
 # =========================
-# OWNER: APPROVE PAYMENT
-# callback_data: approve_<user_id>_<amount>
+# OWNER: APPROVE SUBSCRIPTION
+# callback_data: approve_sub_<user_id>
 # =========================
-@router.callback_query(lambda c: c.data.startswith("approve_"))
-async def approve_payment(call: CallbackQuery):
+@router.callback_query(lambda c: c.data.startswith("approve_sub_"))
+async def approve_subscription(call: CallbackQuery):
     if call.from_user.id != OWNER_ID:
         await call.answer("Not authorized", show_alert=True)
         return
 
     try:
-        parts = call.data.split("_")
-        user_id = int(parts[1])
-        amount = int(parts[2])
+        user_id = int(call.data.split("_")[2])
     except (ValueError, IndexError):
         await call.answer("Invalid data", show_alert=True)
         return
 
-    # ✅ Update user's wallet and check if user exists
-    if not update_wallet(user_id, amount):
-        await call.answer("❌ Error: User not found in database!", show_alert=True)
-        return
+    # ✅ Mark user as subscribed
+    set_user_subscribed(user_id)
 
-    # ✅ Handle referral bonus
+    # ✅ Referral fixed bonus (₹5 example)
     referrer_id = get_referrer(user_id)
     if referrer_id:
-        # Bonus calculation: 0.4%
-        bonus = amount * 0.004
-        if bonus > 0:
-            update_wallet(referrer_id, bonus)
-            # Notify referrer
-            try:
-                await call.bot.send_message(
-                    referrer_id,
-                    f"💸 You received a referral bonus of <b>{bonus:.2f}</b> coins "
-                    f"from user <code>{user_id}</code> deposit!"
-                )
-            except Exception:
-                pass # Referrer might have blocked bot
+        bonus = 5
+        update_wallet(referrer_id, bonus)
 
-    await call.answer("✅ Payment approved")
+        try:
+            await call.bot.send_message(
+                referrer_id,
+                f"💸 You received ₹{bonus} referral bonus from user <code>{user_id}</code> subscription!"
+            )
+        except Exception:
+            pass
 
-    # ✅ Edit admin message safely
-    new_text = f"✅ Payment Approved\n👤 User: <code>{user_id}</code>\n💰 Amount: {amount}"
+    await call.answer("✅ Subscription approved")
+
+    # ✅ Update admin message
+    new_text = (
+        f"✅ Subscription Approved\n"
+        f"👤 User: <code>{user_id}</code>\n"
+        f"💳 Amount: ₹50"
+    )
+
     if call.message.caption:
         await call.message.edit_caption(caption=new_text)
     else:
         await call.message.edit_text(text=new_text)
 
     # ✅ Notify user
-    new_bal = get_wallet(user_id)
     await call.bot.send_message(
         user_id,
-        f"✅ Your payment has been approved 🎉\n💰 {amount} coins added to your wallet\n📊 New Balance: <b>{new_bal}</b> coins"
+        "✅ Your ₹50 subscription has been approved.\n\n"
+        "You can now submit your video for review.",
+        reply_markup=main_menu_keyboard(user_id)
     )
 
 
 # =========================
-# OWNER: DECLINE PAYMENT
-# callback_data: decline_<user_id>_<amount>
+# OWNER: DECLINE SUBSCRIPTION
+# callback_data: decline_sub_<user_id>
 # =========================
-@router.callback_query(lambda c: c.data.startswith("decline_"))
-async def decline_payment(call: CallbackQuery):
+@router.callback_query(lambda c: c.data.startswith("decline_sub_"))
+async def decline_subscription(call: CallbackQuery):
     if call.from_user.id != OWNER_ID:
         await call.answer("Not authorized", show_alert=True)
         return
 
     try:
-        parts = call.data.split("_")
-        user_id = int(parts[1])
-        amount = int(parts[2])
+        user_id = int(call.data.split("_")[2])
     except (ValueError, IndexError):
         await call.answer("Invalid data", show_alert=True)
         return
 
-    await call.answer("❌ Payment declined")
+    await call.answer("❌ Subscription declined")
 
-    # ✅ Edit admin message safely
-    new_text = f"❌ Payment Declined\n👤 User: <code>{user_id}</code>\n💰 Amount: {amount}"
+    new_text = (
+        f"❌ Subscription Declined\n"
+        f"👤 User: <code>{user_id}</code>\n"
+        f"💳 Amount: ₹50"
+    )
+
     if call.message.caption:
         await call.message.edit_caption(caption=new_text)
     else:
         await call.message.edit_text(text=new_text)
 
-    # ✅ Notify user
     await call.bot.send_message(
         user_id,
-        "❌ Your payment was declined. Please contact support."
+        "❌ Your subscription payment was declined.\nPlease contact support."
     )
