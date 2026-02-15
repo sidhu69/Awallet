@@ -12,7 +12,6 @@ from handlers.start import router as start_router
 from handlers.menu import router as menu_router
 from handlers.buy_orders import router as buy_orders_router
 from handlers.admin import router as admin_router
-from handlers.referral import router as referral_router
 
 
 # =========================
@@ -37,15 +36,13 @@ async def main():
     dp.include_router(menu_router)
     dp.include_router(buy_orders_router)
     dp.include_router(admin_router)
-    dp.include_router(referral_router)
 
-    print("🚀 Bot started and polling...")
     # 🚀 Start polling
     await dp.start_polling(bot)
 
 
 # =========================
-# RUN BOT
+# ENTRY POINT
 # =========================
 if __name__ == "__main__":
     asyncio.run(main())
