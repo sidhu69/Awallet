@@ -9,19 +9,16 @@ class Database:
         self.create_tables()
 
     def create_tables(self):
-        # Users table
         self.conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY,
             name TEXT,
             upi TEXT,
-            balance REAL DEFAULT 0,
-            is_subscribed BOOLEAN DEFAULT 0,
-            referrer_id INTEGER
+            balance INTEGER DEFAULT 0,
+            is_subscribed BOOLEAN DEFAULT 0
         )
         """)
 
-        # Videos table
         self.conn.execute("""
         CREATE TABLE IF NOT EXISTS videos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,11 +33,11 @@ class Database:
         self.conn.commit()
 
     # ---------- USER METHODS ----------
-    def create_user(self, user_id, name, upi, referrer_id=None):
+    def create_user(self, user_id, name, upi):
         self.conn.execute("""
-        INSERT OR IGNORE INTO users (id, name, upi, referrer_id)
-        VALUES (?, ?, ?, ?)
-        """, (user_id, name, upi, referrer_id))
+        INSERT OR IGNORE INTO users (id, name, upi)
+        VALUES (?, ?, ?)
+        """, (user_id, name, upi))
         self.conn.commit()
 
     def subscribe_user(self, user_id):
@@ -62,25 +59,11 @@ class Database:
         """, (amount, user_id))
         self.conn.commit()
 
-    def get_balance(self, user_id):
-        cursor = self.conn.execute("""
-        SELECT balance FROM users WHERE id = ?
-        """, (user_id,))
-        row = cursor.fetchone()
-        return row[0] if row else None
-
     def get_user(self, user_id):
         cursor = self.conn.execute("""
         SELECT * FROM users WHERE id = ?
         """, (user_id,))
         return cursor.fetchone()
-
-    def get_referrer(self, user_id):
-        cursor = self.conn.execute("""
-        SELECT referrer_id FROM users WHERE id = ?
-        """, (user_id,))
-        row = cursor.fetchone()
-        return row[0] if row and row[0] else None
 
     # ---------- VIDEO METHODS ----------
     def save_video(self, user_id, file_id):
@@ -113,49 +96,48 @@ db = Database()
 # EXPORTED FUNCTIONS
 # =========================
 def init_db():
-    """
-    Initializes the database.
-    (Tables are auto-created by Database constructor)
-    """
-    global db
+    # Tables auto-created in constructor
     pass
 
-
-def create_user(user_id, name, upi, referrer_id=None):
-    db.create_user(user_id, name, upi, referrer_id)
-
+def create_user(user_id, name, upi):
+    db.create_user(user_id, name, upi)
 
 def subscribe_user(user_id):
     db.subscribe_user(user_id)
 
-
 def is_user_subscribed(user_id):
     return db.is_user_subscribed(user_id)
-
 
 def add_balance(user_id, amount):
     db.add_balance(user_id, amount)
 
-
-def get_balance(user_id):
-    return db.get_balance(user_id)
-
-
 def get_user(user_id):
     return db.get_user(user_id)
-
-
-def get_referrer(user_id):
-    return db.get_referrer(user_id)
-
 
 def save_video(user_id, file_id):
     db.save_video(user_id, file_id)
 
-
 def get_pending_videos():
     return db.get_pending_videos()
 
-
 def approve_video(video_id):
     db.approve_video(video_id)
+
+# -------------------------
+# WALLET FUNCTIONS
+# -------------------------
+def get_wallet(user_id):
+    user = db.get_user(user_id)
+    if user:
+        return user[3]  # balance
+    return 0
+
+def update_wallet(user_id, amount):
+    if get_user(user_id):
+        add_balance(user_id, amount)
+        return True
+    return False
+
+def set_upi(new_upi, user_id):
+    db.conn.execute("UPDATE users SET upi = ? WHERE id = ?", (new_upi, user_id))
+    db.conn.commit()
